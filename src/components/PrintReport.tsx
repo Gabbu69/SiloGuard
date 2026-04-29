@@ -1,12 +1,11 @@
 import { useRef } from 'react';
-import { Printer, X, ShieldAlert, Thermometer, Droplets, Wind, Waves } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import type { SensorReading, Alert } from '../lib/supabase';
 import {
   THRESHOLDS,
   getStatus,
   computeMRI,
   getRiskLevel,
-  formatTimestamp,
   type SensorKey,
 } from '../lib/thresholds';
 
@@ -21,30 +20,30 @@ function getRecommendation(sensor: SensorKey, value: number): string {
   const status = getStatus(sensor, value);
   const recs: Record<SensorKey, Record<string, string>> = {
     temperature: {
-      SAFE: 'Temperature is within the acceptable range for rice storage (below 32°C). Continue monitoring.',
-      WARNING: 'Temperature is elevated (32–38°C). Consider activating ventilation fans. Inspect insulation.',
-      DANGER: 'CRITICAL: Temperature exceeds 38°C! Immediate action required — activate cooling, inspect for heat sources, and consider relocating stock.',
+      SAFE: 'Temperature is within the optimal storage range. Maintain current environment controls.',
+      WARNING: 'Temperature is elevated. Monitor closely and ensure ventilation systems are active.',
+      DANGER: 'CRITICAL: Temperature dangerously high. Immediate intervention required to prevent stock damage.',
     },
     humidity: {
-      SAFE: 'Humidity levels are safe (below 70%). Storage environment is well-controlled.',
-      WARNING: 'Humidity is elevated (70–85%). Turn on dehumidifiers. Check sealing of storage containers.',
-      DANGER: 'CRITICAL: Humidity exceeds 85%! High risk of mold and fungal growth. Immediate dehumidification and inspection required.',
+      SAFE: 'Humidity levels are well-controlled. Low risk of fungal growth.',
+      WARNING: 'Humidity is rising. Consider increasing dehumidification or ventilation.',
+      DANGER: 'CRITICAL: Excessive humidity detected. High risk of mold. Deploy emergency dehumidification immediately.',
     },
     gas_ppm: {
-      SAFE: 'Air quality is good (below 200 ppm). No unusual gases detected.',
-      WARNING: 'Elevated gas levels detected (200–400 ppm). Increase ventilation. Investigate potential sources of contamination.',
-      DANGER: 'CRITICAL: Gas levels exceed 400 ppm! Possible spoilage or contamination. Evacuate nearby personnel, increase ventilation, and inspect rice stock immediately.',
+      SAFE: 'Air quality is nominal. No indications of spoilage or abnormal off-gassing.',
+      WARNING: 'Elevated gas levels detected. Investigate for potential early-stage spoilage.',
+      DANGER: 'CRITICAL: Dangerous air quality. Likely spoilage or contamination. Evacuate personnel and inspect stock.',
     },
     moisture: {
-      SAFE: 'Moisture content is within safe parameters (below 60%). Rice quality is maintained.',
-      WARNING: 'Moisture is rising (60–80%). Activate drying procedures. Check for water ingress or condensation.',
-      DANGER: 'CRITICAL: Moisture exceeds 80%! Severe risk of grain deterioration. Emergency drying required. Separate affected stock.',
+      SAFE: 'Moisture content is optimal. Grain preservation is stable.',
+      WARNING: 'Moisture is approaching upper safety limits. Schedule drying if trend continues.',
+      DANGER: 'CRITICAL: Severe moisture levels. Immediate drying required to prevent catastrophic stock loss.',
     },
   };
   return recs[sensor][status];
 }
 
-export default function PrintReport({ readings, latestReading, alerts, onClose }: PrintReportProps) {
+export default function PrintReport({ readings, latestReading, onClose }: PrintReportProps) {
   const reportRef = useRef<HTMLDivElement>(null);
 
   const temp = latestReading?.temperature ?? 0;
@@ -60,11 +59,9 @@ export default function PrintReport({ readings, latestReading, alerts, onClose }
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hour12: true,
   });
 
-  // Compute averages from readings
   const avgTemp = readings.length ? readings.reduce((s, r) => s + r.temperature, 0) / readings.length : 0;
   const avgHum = readings.length ? readings.reduce((s, r) => s + r.humidity, 0) / readings.length : 0;
   const avgGas = readings.length ? readings.reduce((s, r) => s + r.gas_ppm, 0) / readings.length : 0;
@@ -91,177 +88,9 @@ export default function PrintReport({ readings, latestReading, alerts, onClose }
       <!DOCTYPE html>
       <html>
       <head>
-        <title>SiloGuard Report — ${new Date().toLocaleDateString()}</title>
+        <title>SiloGuard Official Report</title>
         <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            color: #1e293b;
-            background: #fff;
-            padding: 40px;
-            line-height: 1.6;
-          }
-          .header {
-            text-align: center;
-            border-bottom: 3px solid #16a34a;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-          }
-          .header h1 {
-            font-size: 28px;
-            font-weight: 800;
-            color: #0f172a;
-            letter-spacing: -0.5px;
-          }
-          .header .subtitle {
-            font-size: 13px;
-            color: #64748b;
-            margin-top: 4px;
-          }
-          .header .date {
-            font-size: 12px;
-            color: #94a3b8;
-            margin-top: 8px;
-          }
-          .section {
-            margin-bottom: 28px;
-            page-break-inside: avoid;
-          }
-          .section-title {
-            font-size: 16px;
-            font-weight: 700;
-            color: #0f172a;
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 6px;
-            margin-bottom: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-          }
-          .section-title .icon {
-            width: 20px;
-            height: 20px;
-            display: inline-flex;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-          }
-          th {
-            text-align: left;
-            background: #f1f5f9;
-            padding: 10px 14px;
-            font-weight: 600;
-            color: #475569;
-            border-bottom: 2px solid #e2e8f0;
-          }
-          td {
-            padding: 9px 14px;
-            border-bottom: 1px solid #f1f5f9;
-            color: #334155;
-          }
-          tr:hover td { background: #f8fafc; }
-          .status-safe { color: #16a34a; font-weight: 600; }
-          .status-warning { color: #d97706; font-weight: 600; }
-          .status-danger { color: #dc2626; font-weight: 600; }
-          .mri-box {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            background: #f0fdf4;
-            border: 2px solid #bbf7d0;
-            border-radius: 12px;
-            padding: 16px 24px;
-            margin: 10px 0;
-          }
-          .mri-box.moderate { background: #fefce8; border-color: #fde68a; }
-          .mri-box.high { background: #fff7ed; border-color: #fed7aa; }
-          .mri-box.critical { background: #fef2f2; border-color: #fecaca; }
-          .mri-score {
-            font-size: 36px;
-            font-weight: 800;
-          }
-          .mri-label {
-            font-size: 14px;
-            font-weight: 600;
-          }
-          .recommendation {
-            background: #f8fafc;
-            border-left: 4px solid #3b82f6;
-            padding: 12px 16px;
-            margin: 8px 0;
-            font-size: 13px;
-            border-radius: 0 8px 8px 0;
-          }
-          .recommendation.warning { border-left-color: #f59e0b; background: #fffbeb; }
-          .recommendation.danger { border-left-color: #ef4444; background: #fef2f2; }
-          .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin: 16px 0;
-          }
-          .summary-card {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 16px;
-            text-align: center;
-          }
-          .summary-card .value {
-            font-size: 28px;
-            font-weight: 800;
-            color: #0f172a;
-          }
-          .summary-card .label {
-            font-size: 12px;
-            color: #64748b;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 4px;
-          }
-          .summary-card .unit {
-            font-size: 14px;
-            color: #94a3b8;
-            font-weight: 500;
-          }
-          .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid #e2e8f0;
-            text-align: center;
-            font-size: 11px;
-            color: #94a3b8;
-          }
-          .sig-line {
-            margin-top: 60px;
-            display: flex;
-            justify-content: space-between;
-            gap: 80px;
-          }
-          .sig-box {
-            flex: 1;
-            text-align: center;
-          }
-          .sig-box .line {
-            border-top: 1px solid #334155;
-            margin-bottom: 4px;
-            margin-top: 40px;
-          }
-          .sig-box .label {
-            font-size: 12px;
-            color: #64748b;
-            font-weight: 500;
-          }
-          @media print {
-            body { padding: 20px; }
-            .no-print { display: none !important; }
-          }
-        </style>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
       </head>
       <body>
         ${printContent.innerHTML}
@@ -280,43 +109,32 @@ export default function PrintReport({ readings, latestReading, alerts, onClose }
     return s === 'DANGER' ? 'status-danger' : s === 'WARNING' ? 'status-warning' : 'status-safe';
   };
 
-  const recClass = (sensor: SensorKey, value: number) => {
-    const s = getStatus(sensor, value);
-    return s === 'DANGER' ? 'recommendation danger' : s === 'WARNING' ? 'recommendation warning' : 'recommendation';
-  };
-
-  const mriBoxClass = () => {
-    if (riskLevel === 'Critical') return 'mri-box critical';
-    if (riskLevel === 'High') return 'mri-box high';
-    if (riskLevel === 'Moderate') return 'mri-box moderate';
-    return 'mri-box';
-  };
-
   return (
-    <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-dark-800 rounded-2xl border border-dark-600/60 w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
+    <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-8">
+      <div className="bg-dark-800 rounded-2xl border border-dark-600/60 w-full max-w-5xl h-full max-h-[95vh] flex flex-col shadow-2xl overflow-hidden">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-dark-600/40">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-rice-500/10 rounded-lg ring-1 ring-rice-500/30">
-              <Printer className="w-5 h-5 text-rice-400" />
+        <div className="flex items-center justify-between px-4 sm:px-8 py-4 sm:py-5 border-b border-dark-600/40 bg-dark-900/50">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="p-2 sm:p-3 bg-rice-500/10 rounded-xl ring-1 ring-rice-500/30 flex-shrink-0">
+              <Printer className="w-5 h-5 sm:w-6 sm:h-6 text-rice-400" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-100">Generate Report</h2>
-              <p className="text-xs text-slate-400">Full sensor data analysis & recommendations</p>
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold text-white tracking-wide truncate">Official Audit Report</h2>
+              <p className="text-xs sm:text-sm text-slate-400 truncate">Preview document before printing or exporting</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
             <button
               onClick={handlePrint}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-rice-500 to-rice-600 hover:from-rice-400 hover:to-rice-500 text-white text-sm font-bold rounded-xl transition-all duration-300 shadow-lg shadow-rice-500/25 hover:shadow-rice-500/40"
+              className="group flex items-center gap-1.5 sm:gap-2 px-4 sm:px-5 py-2 bg-dark-700/80 hover:bg-rice-600 text-white text-xs sm:text-sm font-semibold rounded-full border border-dark-600 hover:border-rice-500 transition-all duration-300 shadow-lg hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] backdrop-blur-md overflow-visible"
             >
-              <Printer className="w-4 h-4" />
-              Print / Save PDF
+              <Printer className="w-4 h-4 text-rice-400 group-hover:text-white" />
+              <span className="whitespace-nowrap pr-1">Print Report</span>
             </button>
+            <div className="w-px h-6 bg-dark-600/50 hidden sm:block"></div>
             <button
               onClick={onClose}
-              className="p-2 rounded-lg hover:bg-dark-600/60 text-slate-400 hover:text-slate-200 transition-colors"
+              className="p-2 rounded-full bg-dark-700/50 border border-dark-600/50 hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/30 text-slate-400 transition-all"
             >
               <X className="w-5 h-5" />
             </button>
@@ -324,229 +142,405 @@ export default function PrintReport({ readings, latestReading, alerts, onClose }
         </div>
 
         {/* Report Preview (scrollable) */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto bg-slate-100 p-8 flex justify-center">
           <div
             ref={reportRef}
-            className="bg-white rounded-xl p-8 text-slate-800"
-            style={{ fontFamily: "'Inter', sans-serif" }}
+            className="w-full max-w-[850px] bg-white shadow-xl relative"
           >
-            {/* Report Header */}
-            <div className="header">
-              <h1>SiloGuard — Sensor Data Report</h1>
-              <div className="subtitle">Smart Rice Storage Monitoring System • University of Southern Mindanao</div>
-              <div className="date">Generated: {now}</div>
-            </div>
+            <style>{`
+              .print-doc {
+                font-family: 'Plus Jakarta Sans', sans-serif;
+                color: #0f172a;
+                padding: 50px 60px;
+                background: #fff;
+                position: relative;
+                overflow: hidden;
+              }
+              /* Watermark */
+              .print-doc::before {
+                content: 'CONFIDENTIAL';
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) rotate(-45deg);
+                font-size: 120px;
+                font-weight: 800;
+                color: rgba(0,0,0,0.02);
+                white-space: nowrap;
+                z-index: 0;
+                pointer-events: none;
+              }
+              .content-wrapper {
+                position: relative;
+                z-index: 1;
+              }
+              .doc-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                border-bottom: 2px solid #0f172a;
+                padding-bottom: 24px;
+                margin-bottom: 32px;
+              }
+              .doc-logo-area {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+              }
+              .doc-logo {
+                width: 50px;
+                height: 50px;
+              }
+              .doc-title {
+                font-size: 28px;
+                font-weight: 800;
+                letter-spacing: -0.5px;
+                text-transform: uppercase;
+                margin-bottom: 4px;
+                color: #0f172a;
+              }
+              .doc-subtitle {
+                font-size: 13px;
+                color: #475569;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+                text-transform: uppercase;
+              }
+              .doc-meta {
+                text-align: right;
+              }
+              .doc-meta-item {
+                font-size: 12px;
+                color: #475569;
+                margin-bottom: 4px;
+              }
+              .doc-meta-item strong {
+                color: #0f172a;
+              }
+              .doc-section {
+                margin-bottom: 36px;
+                page-break-inside: avoid;
+              }
+              .section-heading {
+                font-size: 15px;
+                font-weight: 700;
+                color: #0f172a;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                border-bottom: 1px solid #cbd5e1;
+                padding-bottom: 8px;
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+              }
+              
+              /* Overview Grid */
+              .overview-grid {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 16px;
+                margin-bottom: 20px;
+              }
+              .overview-card {
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 16px;
+                text-align: center;
+                background: #f8fafc;
+              }
+              .overview-label {
+                font-size: 11px;
+                font-weight: 700;
+                color: #64748b;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 8px;
+              }
+              .overview-value {
+                font-size: 26px;
+                font-weight: 800;
+                color: #0f172a;
+                font-family: 'JetBrains Mono', monospace;
+              }
+              .overview-unit {
+                font-size: 12px;
+                color: #94a3b8;
+                font-family: 'Plus Jakarta Sans', sans-serif;
+              }
+              
+              /* Risk Assessment */
+              .risk-panel {
+                display: flex;
+                gap: 30px;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-left: 6px solid #16a34a;
+                padding: 24px;
+                border-radius: 8px;
+              }
+              .risk-panel.warning { border-left-color: #f59e0b; background: #fffbeb; }
+              .risk-panel.danger { border-left-color: #dc2626; background: #fef2f2; }
+              .risk-score {
+                font-size: 48px;
+                font-weight: 800;
+                line-height: 1;
+                color: #0f172a;
+              }
+              .risk-details h4 {
+                font-size: 18px;
+                font-weight: 700;
+                margin-bottom: 4px;
+              }
+              .risk-details p {
+                font-size: 13px;
+                color: #475569;
+                line-height: 1.5;
+              }
+              
+              /* Tables */
+              .data-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 12px;
+                font-family: 'JetBrains Mono', monospace;
+              }
+              .data-table th {
+                font-family: 'Plus Jakarta Sans', sans-serif;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: #475569;
+                background: #f1f5f9;
+                padding: 12px;
+                text-align: left;
+                border-top: 1px solid #cbd5e1;
+                border-bottom: 2px solid #cbd5e1;
+              }
+              .data-table td {
+                padding: 12px;
+                border-bottom: 1px solid #e2e8f0;
+                color: #0f172a;
+              }
+              .data-table tr:nth-child(even) td {
+                background: #f8fafc;
+              }
+              
+              /* Status Badges */
+              .status-safe { color: #16a34a; font-weight: 700; }
+              .status-warning { color: #d97706; font-weight: 700; }
+              .status-danger { color: #dc2626; font-weight: 700; }
+              
+              /* Signatures */
+              .signatures {
+                display: flex;
+                justify-content: space-between;
+                margin-top: 80px;
+                page-break-inside: avoid;
+              }
+              .sig-block {
+                width: 30%;
+                text-align: center;
+              }
+              .sig-line {
+                border-bottom: 1px solid #0f172a;
+                height: 40px;
+                margin-bottom: 8px;
+              }
+              .sig-title {
+                font-size: 11px;
+                font-weight: 700;
+                color: #475569;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+              }
+              
+              /* Footer */
+              .doc-footer {
+                margin-top: 40px;
+                padding-top: 20px;
+                border-top: 1px solid #e2e8f0;
+                display: flex;
+                justify-content: space-between;
+                font-size: 10px;
+                color: #94a3b8;
+                font-family: 'JetBrains Mono', monospace;
+              }
+              
+              @media print {
+                .print-doc { padding: 0; }
+                @page { margin: 1.5cm; }
+              }
+            `}</style>
 
-            {/* Current Readings Summary */}
-            <div className="section">
-              <div className="section-title">📊 Current Sensor Readings</div>
-              <div className="summary-grid">
-                <div className="summary-card">
-                  <div className="label">Temperature</div>
-                  <div className="value">{temp.toFixed(1)}</div>
-                  <div className="unit">°C</div>
-                  <div className={statusClass('temperature', temp)} style={{ fontSize: '11px', marginTop: '4px' }}>
-                    {getStatus('temperature', temp)}
+            <div className="print-doc">
+              <div className="content-wrapper">
+                
+                {/* Header */}
+                <div className="doc-header">
+                  <div className="doc-logo-area">
+                    <img src="/logo.png" alt="Logo" className="doc-logo" onError={(e) => e.currentTarget.style.display = 'none'} />
+                    <div>
+                      <div className="doc-title">SiloGuard Report</div>
+                      <div className="doc-subtitle">Smart Rice Storage Monitoring System</div>
+                    </div>
+                  </div>
+                  <div className="doc-meta">
+                    <div className="doc-meta-item"><strong>Date:</strong> {now}</div>
+                    <div className="doc-meta-item"><strong>Ref:</strong> SG-{Math.floor(Date.now() / 1000).toString().slice(-6)}</div>
+                    <div className="doc-meta-item"><strong>Facility:</strong> USM IoT Lab</div>
                   </div>
                 </div>
-                <div className="summary-card">
-                  <div className="label">Humidity</div>
-                  <div className="value">{hum.toFixed(1)}</div>
-                  <div className="unit">%</div>
-                  <div className={statusClass('humidity', hum)} style={{ fontSize: '11px', marginTop: '4px' }}>
-                    {getStatus('humidity', hum)}
+
+                {/* Section 1: Executive Summary */}
+                <div className="doc-section">
+                  <div className="section-heading">Current Environmental State</div>
+                  <div className="overview-grid">
+                    <div className="overview-card">
+                      <div className="overview-label">Temperature</div>
+                      <div className="overview-value">{temp.toFixed(1)}<span className="overview-unit">°C</span></div>
+                      <div className={statusClass('temperature', temp)} style={{ fontSize: '10px', marginTop: '6px' }}>
+                        {getStatus('temperature', temp)}
+                      </div>
+                    </div>
+                    <div className="overview-card">
+                      <div className="overview-label">Relative Humidity</div>
+                      <div className="overview-value">{hum.toFixed(1)}<span className="overview-unit">%</span></div>
+                      <div className={statusClass('humidity', hum)} style={{ fontSize: '10px', marginTop: '6px' }}>
+                        {getStatus('humidity', hum)}
+                      </div>
+                    </div>
+                    <div className="overview-card">
+                      <div className="overview-label">Air Quality (MQ-135)</div>
+                      <div className="overview-value">{gas.toFixed(0)}<span className="overview-unit">PPM</span></div>
+                      <div className={statusClass('gas_ppm', gas)} style={{ fontSize: '10px', marginTop: '6px' }}>
+                        {getStatus('gas_ppm', gas)}
+                      </div>
+                    </div>
+                    <div className="overview-card">
+                      <div className="overview-label">Grain Moisture</div>
+                      <div className="overview-value">{moist.toFixed(1)}<span className="overview-unit">%</span></div>
+                      <div className={statusClass('moisture', moist)} style={{ fontSize: '10px', marginTop: '6px' }}>
+                        {getStatus('moisture', moist)}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="summary-card">
-                  <div className="label">Gas (MQ-135)</div>
-                  <div className="value">{gas.toFixed(0)}</div>
-                  <div className="unit">ppm</div>
-                  <div className={statusClass('gas_ppm', gas)} style={{ fontSize: '11px', marginTop: '4px' }}>
-                    {getStatus('gas_ppm', gas)}
+
+                {/* Section 2: Mold Risk Assessment */}
+                <div className="doc-section">
+                  <div className="section-heading">Mold Risk Assessment</div>
+                  <div className={`risk-panel ${riskLevel === 'Critical' || riskLevel === 'High' ? 'danger' : riskLevel === 'Moderate' ? 'warning' : ''}`}>
+                    <div className="risk-score">{mri}</div>
+                    <div className="risk-details">
+                      <h4>{riskLevel} Risk Level</h4>
+                      <p>
+                        The Mold Risk Index (MRI) is a composite metric derived from current humidity, temperature, 
+                        gas emissions, and moisture content. An elevated score indicates a statistically higher probability 
+                        of fungal propagation and stock deterioration.
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <div className="summary-card">
-                  <div className="label">Moisture</div>
-                  <div className="value">{moist.toFixed(1)}</div>
-                  <div className="unit">%</div>
-                  <div className={statusClass('moisture', moist)} style={{ fontSize: '11px', marginTop: '4px' }}>
-                    {getStatus('moisture', moist)}
-                  </div>
+
+                {/* Section 3: Recommendations */}
+                <div className="doc-section">
+                  <div className="section-heading">Automated Recommendations</div>
+                  <table className="data-table" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                    <tbody>
+                      {(['temperature', 'humidity', 'gas_ppm', 'moisture'] as SensorKey[]).map((key) => {
+                        const value = key === 'temperature' ? temp : key === 'humidity' ? hum : key === 'gas_ppm' ? gas : moist;
+                        return (
+                          <tr key={key}>
+                            <td style={{ width: '20%', fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', color: '#64748b' }}>
+                              {key === 'gas_ppm' ? 'Air Quality' : key}
+                            </td>
+                            <td style={{ width: '15%' }} className={statusClass(key, value)}>
+                              {getStatus(key, value)}
+                            </td>
+                            <td style={{ fontSize: '13px' }}>{getRecommendation(key, value)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            </div>
 
-            {/* Mold Risk Index */}
-            <div className="section">
-              <div className="section-title">🛡️ Mold Risk Index (MRI)</div>
-              <div className={mriBoxClass()}>
-                <div className="mri-score">{mri}</div>
-                <div>
-                  <div className="mri-label">{riskLevel} Risk</div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                    Score out of 100 • Formula: Humidity(40%) + Temperature(30%) + Gas(20%) + Moisture(10%)
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Recommendations */}
-            <div className="section">
-              <div className="section-title">💡 Recommendations & Analysis</div>
-              {(['temperature', 'humidity', 'gas_ppm', 'moisture'] as SensorKey[]).map((key) => {
-                const value = key === 'temperature' ? temp : key === 'humidity' ? hum : key === 'gas_ppm' ? gas : moist;
-                return (
-                  <div key={key} className={recClass(key, value)}>
-                    <strong style={{ textTransform: 'capitalize' }}>
-                      {key === 'gas_ppm' ? 'Air Quality' : key}:
-                    </strong>{' '}
-                    {getRecommendation(key, value)}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Statistical Summary */}
-            <div className="section">
-              <div className="section-title">📈 Statistical Summary (Last {readings.length} Readings)</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Parameter</th>
-                    <th>Current</th>
-                    <th>Average</th>
-                    <th>Min</th>
-                    <th>Max</th>
-                    <th>Threshold (W/D)</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><strong>Temperature</strong></td>
-                    <td>{temp.toFixed(1)} °C</td>
-                    <td>{avgTemp.toFixed(1)} °C</td>
-                    <td>{minTemp.toFixed(1)} °C</td>
-                    <td>{maxTemp.toFixed(1)} °C</td>
-                    <td>{THRESHOLDS.temperature.warning} / {THRESHOLDS.temperature.danger} °C</td>
-                    <td className={statusClass('temperature', temp)}>{getStatus('temperature', temp)}</td>
-                  </tr>
-                  <tr>
-                    <td><strong>Humidity</strong></td>
-                    <td>{hum.toFixed(1)}%</td>
-                    <td>{avgHum.toFixed(1)}%</td>
-                    <td>{minHum.toFixed(1)}%</td>
-                    <td>{maxHum.toFixed(1)}%</td>
-                    <td>{THRESHOLDS.humidity.warning} / {THRESHOLDS.humidity.danger}%</td>
-                    <td className={statusClass('humidity', hum)}>{getStatus('humidity', hum)}</td>
-                  </tr>
-                  <tr>
-                    <td><strong>Gas (MQ-135)</strong></td>
-                    <td>{gas.toFixed(0)} ppm</td>
-                    <td>{avgGas.toFixed(0)} ppm</td>
-                    <td>{minGas.toFixed(0)} ppm</td>
-                    <td>{maxGas.toFixed(0)} ppm</td>
-                    <td>{THRESHOLDS.gas_ppm.warning} / {THRESHOLDS.gas_ppm.danger} ppm</td>
-                    <td className={statusClass('gas_ppm', gas)}>{getStatus('gas_ppm', gas)}</td>
-                  </tr>
-                  <tr>
-                    <td><strong>Moisture</strong></td>
-                    <td>{moist.toFixed(1)}%</td>
-                    <td>{avgMoist.toFixed(1)}%</td>
-                    <td>{minMoist.toFixed(1)}%</td>
-                    <td>{maxMoist.toFixed(1)}%</td>
-                    <td>{THRESHOLDS.moisture.warning} / {THRESHOLDS.moisture.danger}%</td>
-                    <td className={statusClass('moisture', moist)}>{getStatus('moisture', moist)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Recent Alerts */}
-            {alerts.length > 0 && (
-              <div className="section">
-                <div className="section-title">🔔 Recent Alerts ({alerts.length})</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Type</th>
-                      <th>Sensor</th>
-                      <th>Value</th>
-                      <th>MRI Score</th>
-                      <th>Timestamp</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alerts.map((alert, i) => (
-                      <tr key={alert.id}>
-                        <td>{i + 1}</td>
-                        <td><strong>{alert.type}</strong></td>
-                        <td style={{ textTransform: 'capitalize' }}>{alert.sensor}</td>
-                        <td>{alert.value?.toFixed(1)}</td>
-                        <td>{alert.mri_score}</td>
-                        <td>{formatTimestamp(alert.created_at)}</td>
+                {/* Section 4: Statistical Data */}
+                <div className="doc-section">
+                  <div className="section-heading">Aggregate Telemetry (Last {readings.length} Cycles)</div>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Parameter</th>
+                        <th>Current</th>
+                        <th>Average</th>
+                        <th>Minimum</th>
+                        <th>Maximum</th>
+                        <th>Threshold Limit</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 600 }}>Temperature</td>
+                        <td className={statusClass('temperature', temp)}>{temp.toFixed(1)} °C</td>
+                        <td>{avgTemp.toFixed(1)} °C</td>
+                        <td>{minTemp.toFixed(1)} °C</td>
+                        <td>{maxTemp.toFixed(1)} °C</td>
+                        <td>&lt; {THRESHOLDS.temperature.warning} °C</td>
+                      </tr>
+                      <tr>
+                        <td style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 600 }}>Humidity</td>
+                        <td className={statusClass('humidity', hum)}>{hum.toFixed(1)}%</td>
+                        <td>{avgHum.toFixed(1)}%</td>
+                        <td>{minHum.toFixed(1)}%</td>
+                        <td>{maxHum.toFixed(1)}%</td>
+                        <td>&lt; {THRESHOLDS.humidity.warning}%</td>
+                      </tr>
+                      <tr>
+                        <td style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 600 }}>Gas Level</td>
+                        <td className={statusClass('gas_ppm', gas)}>{gas.toFixed(0)} ppm</td>
+                        <td>{avgGas.toFixed(0)} ppm</td>
+                        <td>{minGas.toFixed(0)} ppm</td>
+                        <td>{maxGas.toFixed(0)} ppm</td>
+                        <td>&lt; {THRESHOLDS.gas_ppm.warning} ppm</td>
+                      </tr>
+                      <tr>
+                        <td style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 600 }}>Moisture</td>
+                        <td className={statusClass('moisture', moist)}>{moist.toFixed(1)}%</td>
+                        <td>{avgMoist.toFixed(1)}%</td>
+                        <td>{minMoist.toFixed(1)}%</td>
+                        <td>{maxMoist.toFixed(1)}%</td>
+                        <td>&lt; {THRESHOLDS.moisture.warning}%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
 
-            {/* Historical Data */}
-            <div className="section">
-              <div className="section-title">📋 Raw Sensor Readings Log</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Timestamp</th>
-                    <th>Temp (°C)</th>
-                    <th>Humidity (%)</th>
-                    <th>Gas (ppm)</th>
-                    <th>Moisture (%)</th>
-                    <th>Fan</th>
-                    <th>Buzzer</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {readings.map((r, i) => (
-                    <tr key={r.id}>
-                      <td>{i + 1}</td>
-                      <td>{formatTimestamp(r.created_at)}</td>
-                      <td className={statusClass('temperature', r.temperature)}>{r.temperature.toFixed(1)}</td>
-                      <td className={statusClass('humidity', r.humidity)}>{r.humidity.toFixed(1)}</td>
-                      <td className={statusClass('gas_ppm', r.gas_ppm)}>{r.gas_ppm.toFixed(0)}</td>
-                      <td className={statusClass('moisture', r.moisture)}>{r.moisture.toFixed(1)}</td>
-                      <td>{r.fan_on ? '✅ ON' : '⬜ OFF'}</td>
-                      <td>{r.buzzer_on ? '🔴 ON' : '⬜ OFF'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                {/* Signatures */}
+                <div className="signatures">
+                  <div className="sig-block">
+                    <div className="sig-line"></div>
+                    <div className="sig-title">System Operator</div>
+                  </div>
+                  <div className="sig-block">
+                    <div className="sig-line"></div>
+                    <div className="sig-title">Quality Assurance</div>
+                  </div>
+                  <div className="sig-block">
+                    <div className="sig-line"></div>
+                    <div className="sig-title">Facility Manager</div>
+                  </div>
+                </div>
 
-            {/* Signature Lines */}
-            <div className="sig-line">
-              <div className="sig-box">
-                <div className="line"></div>
-                <div className="label">Prepared by</div>
-              </div>
-              <div className="sig-box">
-                <div className="line"></div>
-                <div className="label">Verified by</div>
-              </div>
-              <div className="sig-box">
-                <div className="line"></div>
-                <div className="label">Approved by</div>
-              </div>
-            </div>
+                {/* Footer */}
+                <div className="doc-footer">
+                  <div>SiloGuard Audit Engine v2.1.0</div>
+                  <div>CONFIDENTIAL DOCUMENT</div>
+                  <div>Page 1 of 1</div>
+                </div>
 
-            {/* Footer */}
-            <div className="footer">
-              <p>SiloGuard — Smart Rice Storage Monitoring System</p>
-              <p>University of Southern Mindanao • IoT Research Project • Confidential</p>
-              <p style={{ marginTop: '4px' }}>This report was auto-generated on {now}</p>
+              </div>
             </div>
           </div>
         </div>

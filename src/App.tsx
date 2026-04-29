@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Thermometer, Droplets, Wind, Waves, Printer } from 'lucide-react';
+import { Thermometer, Droplets, Wind, Waves } from 'lucide-react';
 import Navbar from './components/Navbar';
 import SensorCard from './components/SensorCard';
 import MoldRiskGauge from './components/MoldRiskGauge';
@@ -30,8 +30,8 @@ export default function App() {
   const buzzerOn = latestReading?.buzzer_on ?? false;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar isConnected={isConnected} />
+    <div className="min-h-screen flex flex-col overflow-x-hidden">
+      <Navbar isConnected={isConnected} onPrint={() => setShowReport(true)} />
 
       {/* Error Banner */}
       {error && (
@@ -43,16 +43,6 @@ export default function App() {
       )}
 
       <main className="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1440px] mx-auto w-full">
-        {/* ─── Print Report Button ─────────────────────── */}
-        <div className="flex justify-end">
-          <button
-            onClick={() => setShowReport(true)}
-            className="flex items-center gap-2 px-4 py-2.5 glass-card hover:bg-dark-600/60 text-slate-300 hover:text-white text-sm font-semibold rounded-xl transition-all duration-300 border border-dark-600/40 hover:border-rice-500/40 hover:shadow-lg hover:shadow-rice-500/10"
-          >
-            <Printer className="w-4 h-4" />
-            Print Full Report
-          </button>
-        </div>
         {/* ─── Section 1: Sensor Cards ─────────────────── */}
         <section>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

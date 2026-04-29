@@ -1,8 +1,11 @@
+import { Printer } from 'lucide-react';
+
 interface NavbarProps {
   isConnected: boolean;
+  onPrint: () => void;
 }
 
-export default function Navbar({ isConnected }: NavbarProps) {
+export default function Navbar({ isConnected, onPrint }: NavbarProps) {
   return (
     <nav className="sticky top-0 z-50 glass-card-static px-4 sm:px-6 py-3 flex items-center justify-between border-b border-rice-500/10">
       {/* Brand */}
@@ -27,19 +30,32 @@ export default function Navbar({ isConnected }: NavbarProps) {
         </div>
       </div>
 
-      {/* Connection Status */}
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-dark-800/80 border border-dark-600/50">
-        {isConnected ? (
-          <>
-            <span className="text-xs font-medium text-rice-400">Live</span>
-            <span className="w-2 h-2 rounded-full bg-rice-500 status-dot" />
-          </>
-        ) : (
-          <>
-            <span className="text-xs font-medium text-red-400">Offline</span>
-            <span className="w-2 h-2 rounded-full bg-red-500" />
-          </>
-        )}
+      {/* Right Side Actions */}
+      <div className="flex items-center gap-3 sm:gap-4">
+        {/* Print Button */}
+        <button
+          onClick={onPrint}
+          className="group flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 bg-dark-700/80 hover:bg-rice-600 text-white text-xs font-semibold rounded-full border border-dark-600 hover:border-rice-500 transition-all duration-300 shadow-lg hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] backdrop-blur-md"
+        >
+          <Printer className="w-3.5 h-3.5 text-rice-400 group-hover:text-white group-hover:animate-bounce" />
+          <span className="tracking-wide hidden sm:block">Generate Report</span>
+          <span className="tracking-wide sm:hidden">Report</span>
+        </button>
+
+        {/* Connection Status */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-dark-800/80 border border-dark-600/50">
+          {isConnected ? (
+            <>
+              <span className="text-xs font-medium text-rice-400">Live</span>
+              <span className="w-2 h-2 rounded-full bg-rice-500 status-dot" />
+            </>
+          ) : (
+            <>
+              <span className="text-xs font-medium text-red-400">Offline</span>
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+            </>
+          )}
+        </div>
       </div>
     </nav>
   );
