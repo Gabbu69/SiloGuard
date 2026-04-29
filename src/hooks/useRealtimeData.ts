@@ -56,41 +56,6 @@ export function useRealtimeData() {
     import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY
   );
 
-  /* ─── Fetch initial data from Supabase ─── */
-  const fetchInitialData = useCallback(async () => {
-    try {
-      const [readingsRes, alertsRes] = await Promise.all([
-        supabase
-          .from('sensor_readings')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(20),
-        supabase
-          .from('alerts')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(10),
-      ]);
-
-      if (readingsRes.error) throw readingsRes.error;
-      if (alertsRes.error) throw alertsRes.error;
-
-      const readings = (readingsRes.data || []).reverse();
-      setState((prev) => ({
-        ...prev,
-        readings,
-        latestReading: readings[readings.length - 1] || null,
-        alerts: alertsRes.data || [],
-        isLoading: false,
-        isConnected: true,
-        error: null,
-      }));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch data';
-      setState((prev) => ({ ...prev, error: message, isLoading: false }));
-    }
-  }, []);
-
   /* ─── Start demo mode ─── */
   const startDemoMode = useCallback(() => {
     const initialReadings = Array.from({ length: 20 }, (_, i) => generateDemoReading(i));
@@ -128,6 +93,43 @@ export function useRealtimeData() {
       });
     }, 5000);
   }, []);
+
+  /* ─── Fetch initial data from Supabase ─── */
+  const fetchInitialData = useCallback(async () => {
+    try {
+      const [readingsRes, alertsRes] = await Promise.all([
+        supabase
+          .from('sensor_readings')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20),
+        supabase
+          .from('alerts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(10),
+      ]);
+
+      if (readingsRes.error) throw readingsRes.error;
+      if (alertsRes.error) throw alertsRes.error;
+
+      const readings = (readingsRes.data || []).reverse();
+      setState((prev) => ({
+        ...prev,
+        readings,
+        latestReading: readings[readings.length - 1] || null,
+        alerts: alertsRes.data || [],
+        isLoading: false,
+        isConnected: true,
+        error: null,
+      }));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch data';
+      console.warn('[SiloGuard] Supabase fetch failed, falling back to demo mode:', message);
+      startDemoMode();
+      setState((prev) => ({ ...prev, error: message }));
+    }
+  }, [startDemoMode]);
 
   /* ─── Toggle actuator (Supabase or demo) ─── */
   const toggleActuator = useCallback(
