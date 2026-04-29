@@ -1,4 +1,5 @@
-import { Thermometer, Droplets, Wind, Waves } from 'lucide-react';
+import { useState } from 'react';
+import { Thermometer, Droplets, Wind, Waves, Printer } from 'lucide-react';
 import Navbar from './components/Navbar';
 import SensorCard from './components/SensorCard';
 import MoldRiskGauge from './components/MoldRiskGauge';
@@ -6,9 +7,11 @@ import RealtimeChart from './components/RealtimeChart';
 import AlertsPanel from './components/AlertsPanel';
 import ActuatorStatus from './components/ActuatorStatus';
 import DataTable from './components/DataTable';
+import PrintReport from './components/PrintReport';
 import { useRealtimeData } from './hooks/useRealtimeData';
 
 export default function App() {
+  const [showReport, setShowReport] = useState(false);
   const {
     readings,
     latestReading,
@@ -40,6 +43,16 @@ export default function App() {
       )}
 
       <main className="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1440px] mx-auto w-full">
+        {/* ─── Print Report Button ─────────────────────── */}
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowReport(true)}
+            className="flex items-center gap-2 px-4 py-2.5 glass-card hover:bg-dark-600/60 text-slate-300 hover:text-white text-sm font-semibold rounded-xl transition-all duration-300 border border-dark-600/40 hover:border-rice-500/40 hover:shadow-lg hover:shadow-rice-500/10"
+          >
+            <Printer className="w-4 h-4" />
+            Print Full Report
+          </button>
+        </div>
         {/* ─── Section 1: Sensor Cards ─────────────────── */}
         <section>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -115,6 +128,16 @@ export default function App() {
           <p className="mt-1">University of Southern Mindanao &bull; IoT Research Project</p>
         </footer>
       </main>
+
+      {/* ─── Print Report Modal ────────────────────────── */}
+      {showReport && (
+        <PrintReport
+          readings={readings}
+          latestReading={latestReading}
+          alerts={alerts}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }
