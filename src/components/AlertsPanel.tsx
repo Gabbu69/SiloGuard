@@ -119,11 +119,11 @@ export default function AlertsPanel({ alerts, isLoading }: AlertsPanelProps) {
                     <span className="text-xs text-slate-400 flex items-center gap-1">
                       Sensor: <span className="text-slate-200 font-semibold">{alert.sensor}</span>
                     </span>
-                    <span className="text-[10px] text-dark-400">•</span>
+                    <span className="text-[10px] text-dark-400">-</span>
                     <span className="text-xs text-slate-400 flex items-center gap-1">
                       Value: <span className="text-slate-200 font-semibold">{alert.value?.toFixed(1)}</span>
                     </span>
-                    <span className="text-[10px] text-dark-400">•</span>
+                    <span className="text-[10px] text-dark-400">-</span>
                     <span className="text-xs text-slate-400 flex items-center gap-1">
                       MRI: <span className="text-slate-200 font-semibold">{alert.mri_score}</span>
                     </span>

@@ -25,7 +25,7 @@ export default function Navbar({ isConnected, onPrint }: NavbarProps) {
             Smart Rice Storage Monitor
           </h1>
           <p className="text-[11px] text-rice-400/70 font-medium tracking-widest uppercase hidden sm:block">
-            SiloGuard • USM IoT Dashboard
+            SiloGuard - USM IoT Dashboard
           </p>
         </div>
       </div>
@@ -37,9 +37,9 @@ export default function Navbar({ isConnected, onPrint }: NavbarProps) {
           onClick={onPrint}
           className="group flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 bg-dark-700/80 hover:bg-rice-600 text-white text-xs font-semibold rounded-full border border-dark-600 hover:border-rice-500 transition-all duration-300 shadow-lg hover:shadow-[0_0_15px_rgba(34,197,94,0.3)] backdrop-blur-md"
         >
-          <Printer className="w-3.5 h-3.5 text-rice-400 group-hover:text-white group-hover:animate-bounce" />
-          <span className="tracking-wide hidden sm:block">Generate Report</span>
-          <span className="tracking-wide sm:hidden">Report</span>
+          <Printer className="w-3.5 h-3.5 text-rice-400 group-hover:text-white" />
+          <span className="tracking-wide hidden sm:block">Print Data</span>
+          <span className="tracking-wide sm:hidden">Print</span>
         </button>
 
         {/* Connection Status */}

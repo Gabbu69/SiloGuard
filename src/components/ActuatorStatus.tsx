@@ -65,7 +65,7 @@ export default function ActuatorStatus({
             <div>
               <div className="text-sm font-semibold text-slate-200">Exhaust Fan</div>
               <div className="text-[11px] text-slate-500">
-                {fanOn ? 'Running • Active cooling' : 'Idle • Standby'}
+                {fanOn ? 'Running - Active cooling' : 'Idle - Standby'}
               </div>
             </div>
           </div>
@@ -112,7 +112,7 @@ export default function ActuatorStatus({
             <div>
               <div className="text-sm font-semibold text-slate-200">Alert Buzzer</div>
               <div className="text-[11px] text-slate-500">
-                {buzzerOn ? 'Sounding • Alert active' : 'Silent • Standby'}
+                {buzzerOn ? 'Sounding - Alert active' : 'Silent - Standby'}
               </div>
             </div>
           </div>

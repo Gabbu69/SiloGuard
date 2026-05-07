@@ -1,60 +1,101 @@
-import { Database } from 'lucide-react';
-import type { SensorReading } from '../lib/supabase';
-import { computeMRI, getRiskLevel, getRiskColor, getStatus, getStatusColor, formatTimestamp } from '../lib/thresholds';
+import { useMemo } from 'react';
+import { CalendarDays, Database, Layers, Loader2 } from 'lucide-react';
+import type { HistoryRange, SensorReading } from '../lib/supabase';
+import { formatTimestamp, getRiskColor, getRiskLevel, getStatus, getStatusColor } from '../lib/thresholds';
 
 interface DataTableProps {
   readings: SensorReading[];
   isLoading: boolean;
+  selectedRange: HistoryRange;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  onRangeChange: (range: HistoryRange) => void;
+  onLoadMore: () => void;
 }
 
-export default function DataTable({ readings, isLoading }: DataTableProps) {
-  if (isLoading) {
-    return (
-      <div className="glass-card p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="skeleton w-5 h-5 rounded" />
-          <div className="skeleton h-4 w-28" />
-        </div>
-        <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="skeleton h-10 w-full" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+const RANGE_OPTIONS: Array<{ value: HistoryRange; label: string }> = [
+  { value: 'live', label: 'Live' },
+  { value: '24h', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+  { value: '90d', label: '90d' },
+];
 
-  // Show readings in reverse chronological order
-  const sortedReadings = [...readings].reverse();
+function getWorstStatus(reading: SensorReading) {
+  const statuses = [
+    getStatus('temperature', reading.temperature),
+    getStatus('humidity', reading.humidity),
+    getStatus('gas_ppm', reading.gas_ppm),
+    getStatus('moisture', reading.moisture),
+  ];
+  if (statuses.includes('DANGER')) return 'DANGER';
+  if (statuses.includes('WARNING')) return 'WARNING';
+  return 'SAFE';
+}
+
+export default function DataTable({
+  readings,
+  isLoading,
+  selectedRange,
+  hasMore,
+  isLoadingMore,
+  onRangeChange,
+  onLoadMore,
+}: DataTableProps) {
+  const sortedReadings = useMemo(() => [...readings].reverse(), [readings]);
+  const isRollup = sortedReadings.some((reading) => reading.rollup_kind);
 
   return (
-    <div className="glass-card p-6 fade-in-up">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="glass-card p-5 sm:p-6 fade-in-up">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-4">
         <div className="flex items-center gap-2">
           <Database className="w-5 h-5 text-rice-400" />
-          <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-            Historical Logs
-          </h3>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+              Historical Data
+            </h3>
+            <p className="text-xs text-slate-500">
+              {isRollup ? 'Showing rollup summaries for fast long-range review' : 'Showing raw recorded readings'}
+            </p>
+          </div>
         </div>
-        <span className="text-[10px] text-slate-500 bg-dark-700/60 px-2 py-1 rounded-full">
-          {readings.length} records
-        </span>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {RANGE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => onRangeChange(option.value)}
+              className={`range-button ${selectedRange === option.value ? 'range-button-active' : ''}`}
+            >
+              {option.label}
+            </button>
+          ))}
+          <span className="text-[10px] text-slate-500 bg-dark-700/60 px-2 py-1 rounded-full">
+            {readings.length} rows
+          </span>
+        </div>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-dark-600/30">
-        {sortedReadings.length === 0 ? (
+        {isLoading ? (
+          <div className="p-4 space-y-2">
+            {Array.from({ length: 7 }).map((_, index) => (
+              <div key={index} className="skeleton h-9 w-full" />
+            ))}
+          </div>
+        ) : sortedReadings.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-            <Database className="w-8 h-8 mb-2 opacity-30" />
-            <span className="text-sm">No historical data</span>
+            <CalendarDays className="w-8 h-8 mb-2 opacity-30" />
+            <span className="text-sm">No data for this range</span>
           </div>
         ) : (
           <table className="data-table">
             <thead>
               <tr>
                 <th>Timestamp</th>
-                <th>Temp (°C)</th>
+                <th>Mode</th>
+                <th>Samples</th>
+                <th>Temp (C)</th>
                 <th>Humidity (%)</th>
                 <th>Gas (ppm)</th>
                 <th>Moisture (%)</th>
@@ -63,39 +104,31 @@ export default function DataTable({ readings, isLoading }: DataTableProps) {
               </tr>
             </thead>
             <tbody>
-              {sortedReadings.map((r) => {
-                const mri = computeMRI(r.temperature, r.humidity, r.gas_ppm, r.moisture);
+              {sortedReadings.map((reading) => {
+                const mri = reading.mri_score;
                 const riskLevel = getRiskLevel(mri);
                 const riskColor = getRiskColor(riskLevel);
-
-                // Overall status: worst of all sensors
-                const statuses = [
-                  getStatus('temperature', r.temperature),
-                  getStatus('humidity', r.humidity),
-                  getStatus('gas_ppm', r.gas_ppm),
-                  getStatus('moisture', r.moisture),
-                ];
-                const worstStatus = statuses.includes('DANGER')
-                  ? 'DANGER'
-                  : statuses.includes('WARNING')
-                    ? 'WARNING'
-                    : 'SAFE';
+                const worstStatus = getWorstStatus(reading);
                 const statusColor = getStatusColor(worstStatus);
 
                 return (
-                  <tr key={r.id}>
-                    <td className="whitespace-nowrap text-xs">{formatTimestamp(r.created_at)}</td>
-                    <td className="tabular-nums">{r.temperature.toFixed(1)}</td>
-                    <td className="tabular-nums">{r.humidity.toFixed(1)}</td>
-                    <td className="tabular-nums">{r.gas_ppm.toFixed(0)}</td>
-                    <td className="tabular-nums">{r.moisture.toFixed(1)}</td>
+                  <tr key={`${reading.rollup_kind || 'raw'}-${reading.id}-${reading.created_at}`}>
+                    <td className="whitespace-nowrap text-xs">{formatTimestamp(reading.created_at)}</td>
+                    <td>
+                      <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 uppercase tracking-wider">
+                        <Layers className="w-3 h-3" />
+                        {reading.rollup_kind || 'raw'}
+                      </span>
+                    </td>
+                    <td className="tabular-nums">{reading.sample_count ?? 1}</td>
+                    <td className="tabular-nums">{reading.temperature.toFixed(1)}</td>
+                    <td className="tabular-nums">{reading.humidity.toFixed(1)}</td>
+                    <td className="tabular-nums">{reading.gas_ppm.toFixed(0)}</td>
+                    <td className="tabular-nums">{reading.moisture.toFixed(1)}</td>
                     <td>
                       <span
                         className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
-                        style={{
-                          color: riskColor,
-                          backgroundColor: `${riskColor}15`,
-                        }}
+                        style={{ color: riskColor, backgroundColor: `${riskColor}15` }}
                       >
                         {mri}
                       </span>
@@ -109,10 +142,7 @@ export default function DataTable({ readings, isLoading }: DataTableProps) {
                           border: `1px solid ${statusColor}25`,
                         }}
                       >
-                        <span
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: statusColor }}
-                        />
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusColor }} />
                         {worstStatus}
                       </span>
                     </td>
@@ -123,6 +153,19 @@ export default function DataTable({ readings, isLoading }: DataTableProps) {
           </table>
         )}
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center pt-4">
+          <button
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="inline-flex items-center gap-2 rounded-full border border-dark-600 bg-dark-700/70 px-4 py-2 text-xs font-semibold text-slate-200 hover:border-rice-500/60 disabled:cursor-wait disabled:opacity-60"
+          >
+            {isLoadingMore && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Load more data
+          </button>
+        </div>
+      )}
     </div>
   );
 }

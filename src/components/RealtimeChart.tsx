@@ -1,34 +1,59 @@
+import { useMemo } from 'react';
 import {
-  LineChart,
+  CartesianGrid,
+  Legend,
   Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
 } from 'recharts';
-import { Activity } from 'lucide-react';
+import { Activity, Clock } from 'lucide-react';
 import type { SensorReading } from '../lib/supabase';
 
 interface RealtimeChartProps {
   readings: SensorReading[];
   isLoading: boolean;
+  lastReceivedAt: string | null;
 }
 
 const SENSOR_LINES = [
-  { key: 'temperature', name: 'Temperature (°C)', color: '#f97316' },
+  { key: 'temperature', name: 'Temperature (C)', color: '#f97316' },
   { key: 'humidity', name: 'Humidity (%)', color: '#3b82f6' },
   { key: 'gas_ppm', name: 'Gas (ppm)', color: '#a855f7' },
   { key: 'moisture', name: 'Moisture (%)', color: '#06b6d4' },
 ] as const;
 
 function formatTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  return new Date(iso).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
-export default function RealtimeChart({ readings, isLoading }: RealtimeChartProps) {
+function formatAge(iso: string | null) {
+  if (!iso) return 'Waiting for data';
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  return `${Math.round(seconds / 60)}m ago`;
+}
+
+export default function RealtimeChart({ readings, isLoading, lastReceivedAt }: RealtimeChartProps) {
+  const chartData = useMemo(
+    () =>
+      readings.map((reading) => ({
+        time: formatTime(reading.created_at),
+        temperature: +reading.temperature.toFixed(1),
+        humidity: +reading.humidity.toFixed(1),
+        gas_ppm: +reading.gas_ppm.toFixed(0),
+        moisture: +reading.moisture.toFixed(1),
+      })),
+    [readings]
+  );
+
   if (isLoading) {
     return (
       <div className="glass-card p-6">
@@ -41,43 +66,33 @@ export default function RealtimeChart({ readings, isLoading }: RealtimeChartProp
     );
   }
 
-  const chartData = readings.map((r) => ({
-    time: formatTime(r.created_at),
-    temperature: +r.temperature.toFixed(1),
-    humidity: +r.humidity.toFixed(1),
-    gas_ppm: +r.gas_ppm.toFixed(0),
-    moisture: +r.moisture.toFixed(1),
-  }));
-
   return (
-    <div className="glass-card p-6 fade-in-up">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="glass-card p-5 sm:p-6 fade-in-up">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-rice-400" />
-          <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-            Sensor Readings (Last 20)
-          </h3>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+              Live Sensor Stream
+            </h3>
+            <p className="text-xs text-slate-500">Last {readings.length} readings kept in memory</p>
+          </div>
         </div>
-        <span className="text-[10px] text-slate-500 bg-dark-700/60 px-2 py-1 rounded-full">
-          Real-time
+        <span className="inline-flex w-fit items-center gap-2 text-[10px] text-slate-400 bg-dark-700/60 px-2 py-1 rounded-full">
+          <Clock className="w-3 h-3" />
+          {formatAge(lastReceivedAt)}
         </span>
       </div>
 
-      {/* Chart */}
       <div className="w-full h-[280px]">
         {readings.length === 0 ? (
           <div className="h-full flex items-center justify-center text-slate-500 text-sm">
-            No sensor data available yet
+            No live sensor data available yet
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 8, right: 16, left: -8, bottom: 0 }}>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="rgba(51, 65, 85, 0.3)"
-                vertical={false}
-              />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(51, 65, 85, 0.3)" vertical={false} />
               <XAxis
                 dataKey="time"
                 tick={{ fontSize: 10, fill: '#64748b' }}
@@ -85,12 +100,7 @@ export default function RealtimeChart({ readings, isLoading }: RealtimeChartProp
                 tickLine={false}
                 interval="preserveStartEnd"
               />
-              <YAxis
-                tick={{ fontSize: 10, fill: '#64748b' }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-              />
+              <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} width={40} />
               <Tooltip
                 contentStyle={{
                   backgroundColor: 'rgba(17, 24, 39, 0.95)',
@@ -98,15 +108,10 @@ export default function RealtimeChart({ readings, isLoading }: RealtimeChartProp
                   borderRadius: '12px',
                   fontSize: '12px',
                   color: '#e2e8f0',
-                  backdropFilter: 'blur(8px)',
                 }}
                 labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
               />
-              <Legend
-                iconType="circle"
-                iconSize={8}
-                wrapperStyle={{ fontSize: '11px', color: '#94a3b8', paddingTop: '8px' }}
-              />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', color: '#94a3b8', paddingTop: '8px' }} />
               {SENSOR_LINES.map((line) => (
                 <Line
                   key={line.key}
@@ -117,8 +122,7 @@ export default function RealtimeChart({ readings, isLoading }: RealtimeChartProp
                   strokeWidth={2}
                   dot={false}
                   activeDot={{ r: 4, strokeWidth: 0, fill: line.color }}
-                  animationDuration={800}
-                  animationEasing="ease-in-out"
+                  isAnimationActive={false}
                 />
               ))}
             </LineChart>

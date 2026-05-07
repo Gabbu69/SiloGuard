@@ -14,22 +14,39 @@ if (!isSupabaseConfigured) {
 export interface SensorReading {
   id: number;
   created_at: string;
+  device_id: string;
   temperature: number;
   humidity: number;
   gas_ppm: number;
   moisture: number;
   fan_on: boolean;
   buzzer_on: boolean;
+  mri_score: number;
+  risk_level: RiskLevel;
+  rollup_kind?: 'hour' | 'day';
+  sample_count?: number;
 }
 
 export interface Alert {
   id: number;
   created_at: string;
+  device_id: string;
   type: string;
   sensor: string;
   value: number;
   mri_score: number;
+  risk_level: RiskLevel;
 }
+
+export interface ActuatorCommand {
+  device_id: string;
+  fan_on: boolean;
+  buzzer_on: boolean;
+  updated_at?: string;
+}
+
+export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Critical';
+export type HistoryRange = 'live' | '24h' | '7d' | '30d' | '90d';
 
 // Create client only if configured, otherwise use a dummy placeholder
 // The app will detect isSupabaseConfigured and run in demo mode
