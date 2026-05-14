@@ -1,9 +1,10 @@
 /*
  * SiloGuard - Smart Rice Storage Monitoring System
- * ESP32 Firmware v2.2
+ * ESP32 Firmware v2.3
  *
  * Sends sensor readings directly to Supabase:
- *   POST /rest/v1/sensor_readings
+ *   UPSERT /rest/v1/current_sensor_readings every 2 seconds
+ *   INSERT /rest/v1/sensor_readings every 60 seconds
  *
  * Prints every reading cycle to the Serial Monitor and keeps one compact
  * retry payload so temporary network failures do not lose the latest sample.
@@ -47,9 +48,9 @@ const bool ACTUATOR_ACTIVE_LOW = false;
 #define MOIST_DANGER 80.0
 
 // Timing
-#define SEND_INTERVAL 10000
 #define SENSOR_READ_DELAY 2000
-#define COMMAND_INTERVAL 10000
+#define LIVE_UPDATE_INTERVAL 2000
+#define HISTORY_INSERT_INTERVAL 60000
 #define WIFI_TIMEOUT 20000
 #define HTTP_TIMEOUT 5000
 
@@ -62,11 +63,11 @@ float moisture = 0.0;
 
 bool fanOn = false;
 bool buzzerOn = false;
-bool commandOverride = false;
+bool manualControl = false;
 
-unsigned long lastSendTime = 0;
 unsigned long lastReadTime = 0;
-unsigned long lastCommandTime = 0;
+unsigned long lastLiveUpdateTime = 0;
+unsigned long lastHistoryInsertTime = 0;
 
 String retryPayload = "";
 uint8_t retryCount = 0;
@@ -104,8 +105,8 @@ void applyActuators() {
 void setup() {
   Serial.begin(115200);
   Serial.println();
-  Serial.println("SiloGuard ESP32 v2.2");
-  Serial.println("Direct Supabase telemetry + printable serial data");
+  Serial.println("SiloGuard ESP32 v2.3");
+  Serial.println("Live Supabase upsert + 1-minute history telemetry");
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(FAN_PIN, OUTPUT);
@@ -134,22 +135,25 @@ void loop() {
 
   if (millis() - lastReadTime >= SENSOR_READ_DELAY) {
     readSensors();
-    if (!commandOverride) {
+    fetchActuatorCommand();
+    if (!manualControl) {
       autoControlActuators();
+    } else {
+      applyActuators();
     }
     printDataCycle("READ");
     lastReadTime = millis();
   }
 
-  if (millis() - lastCommandTime >= COMMAND_INTERVAL) {
-    fetchActuatorCommand();
-    lastCommandTime = millis();
+  if (millis() - lastLiveUpdateTime >= LIVE_UPDATE_INTERVAL) {
+    sendLiveReading();
+    lastLiveUpdateTime = millis();
   }
 
-  if (millis() - lastSendTime >= SEND_INTERVAL) {
+  if (millis() - lastHistoryInsertTime >= HISTORY_INSERT_INTERVAL) {
     retryQueuedPayload();
-    sendCurrentReading();
-    lastSendTime = millis();
+    sendHistoryReading();
+    lastHistoryInsertTime = millis();
   }
 }
 
@@ -234,20 +238,23 @@ String buildPayload() {
   return payload;
 }
 
-bool postPayload(String payload, String label) {
+bool postPayload(String tableName, String payload, String label, bool upsert) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[HTTP] " + label + " skipped. WiFi offline.");
     return false;
   }
 
   HTTPClient http;
-  String url = String(SUPABASE_URL) + "/rest/v1/sensor_readings";
+  String url = String(SUPABASE_URL) + "/rest/v1/" + tableName;
+  if (upsert) {
+    url += "?on_conflict=device_id";
+  }
   http.begin(url);
   http.setTimeout(HTTP_TIMEOUT);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("apikey", SUPABASE_ANON_KEY);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
-  http.addHeader("Prefer", "return=minimal");
+  http.addHeader("Prefer", upsert ? "resolution=merge-duplicates,return=minimal" : "return=minimal");
 
   Serial.print("[HTTP] " + label + " upload... ");
   int httpCode = http.POST(payload);
@@ -283,16 +290,21 @@ void retryQueuedPayload() {
   }
 
   retryCount++;
-  postPayload(retryPayload, "retry #" + String(retryCount));
+  postPayload("sensor_readings", retryPayload, "history retry #" + String(retryCount), false);
 }
 
-void sendCurrentReading() {
+void sendLiveReading() {
   String payload = buildPayload();
-  bool ok = postPayload(payload, "current");
+  postPayload("current_sensor_readings", payload, "live", true);
+}
+
+void sendHistoryReading() {
+  String payload = buildPayload();
+  bool ok = postPayload("sensor_readings", payload, "history", false);
   if (!ok) {
     retryPayload = payload;
     retryCount = 0;
-    Serial.println("[HTTP] Queued latest payload for retry");
+    Serial.println("[HTTP] Queued latest history payload for retry");
   }
 }
 
@@ -300,7 +312,7 @@ void fetchActuatorCommand() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   HTTPClient http;
-  String url = String(SUPABASE_URL) + "/rest/v1/actuator_commands?device_id=eq." + DEVICE_ID + "&select=device_id,fan_on,buzzer_on,updated_at";
+  String url = String(SUPABASE_URL) + "/rest/v1/actuator_commands?device_id=eq." + DEVICE_ID + "&select=device_id,fan_on,buzzer_on,control_mode,updated_at";
   http.begin(url);
   http.setTimeout(HTTP_TIMEOUT);
   http.addHeader("apikey", SUPABASE_ANON_KEY);
@@ -323,22 +335,24 @@ void fetchActuatorCommand() {
   }
 
   if (!doc.is<JsonArray>() || doc.size() == 0) {
-    commandOverride = false;
+    manualControl = false;
     return;
   }
 
   JsonObject command = doc[0];
-  bool nextFan = command["fan_on"] | fanOn;
-  bool nextBuzzer = command["buzzer_on"] | buzzerOn;
-  commandOverride = nextFan || nextBuzzer;
-  fanOn = nextFan;
-  buzzerOn = nextBuzzer;
-  applyActuators();
+  String controlMode = command["control_mode"] | "auto";
+  manualControl = controlMode == "manual";
 
-  Serial.printf("[CMD] fan=%s buzzer=%s override=%s\n",
+  if (manualControl) {
+    fanOn = command["fan_on"].as<bool>();
+    buzzerOn = command["buzzer_on"].as<bool>();
+    applyActuators();
+  }
+
+  Serial.printf("[CMD] mode=%s fan=%s buzzer=%s\n",
+                manualControl ? "manual" : "auto",
                 fanOn ? "ON" : "OFF",
-                buzzerOn ? "ON" : "OFF",
-                commandOverride ? "YES" : "NO");
+                buzzerOn ? "ON" : "OFF");
 }
 
 void printDataCycle(String label) {
@@ -351,6 +365,7 @@ void printDataCycle(String label) {
                  ",moisture_pct=" + String(moisture, 1) +
                  ",mri=" + String(mri, 0) +
                  ",risk=" + riskLevel(mri) +
+                 ",mode=" + String(manualControl ? "manual" : "auto") +
                  ",fan=" + String(fanOn ? "ON" : "OFF") +
                  ",buzzer=" + String(buzzerOn ? "ON" : "OFF") +
                  ",retry=" + String(retryPayload.length() > 0 ? "QUEUED" : "NONE"));

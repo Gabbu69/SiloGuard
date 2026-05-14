@@ -4,13 +4,15 @@ import {
   supabase,
   type ActuatorCommand,
   type Alert,
+  type ControlMode,
+  type CurrentSensorReading,
   type HistoryRange,
   type SensorReading,
 } from '../lib/supabase';
 import { computeMRI, getRiskLevel } from '../lib/thresholds';
 
 const DEVICE_ID = import.meta.env.VITE_DEVICE_ID || 'silo-1';
-const LIVE_LIMIT = 40;
+const LIVE_LIMIT = 90;
 const HISTORY_PAGE_SIZE = 100;
 
 interface RealtimeState {
@@ -28,6 +30,7 @@ interface RealtimeState {
   lastReceivedAt: string | null;
   totalSamples: number;
   controlStatus: string | null;
+  controlMode: ControlMode;
 }
 
 function rangeStart(range: HistoryRange): string | null {
@@ -50,6 +53,22 @@ function makeReading(
     ...input,
     mri_score: mri,
     risk_level: input.risk_level ?? getRiskLevel(mri),
+  };
+}
+
+function currentToReading(input: CurrentSensorReading): SensorReading {
+  return {
+    id: Math.max(1, Date.parse(input.updated_at)),
+    created_at: input.updated_at,
+    device_id: input.device_id,
+    temperature: input.temperature,
+    humidity: input.humidity,
+    gas_ppm: input.gas_ppm,
+    moisture: input.moisture,
+    fan_on: input.fan_on,
+    buzzer_on: input.buzzer_on,
+    mri_score: input.mri_score,
+    risk_level: input.risk_level,
   };
 }
 
@@ -135,6 +154,7 @@ export function useRealtimeData() {
     lastReceivedAt: null,
     totalSamples: 0,
     controlStatus: null,
+    controlMode: 'auto',
   });
 
   const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -233,6 +253,7 @@ export function useRealtimeData() {
       error: null,
       lastReceivedAt: live[live.length - 1]?.created_at ?? null,
       totalSamples: demoHistory.length,
+      controlMode: 'auto',
     }));
 
     demoIntervalRef.current = setInterval(() => {
@@ -250,7 +271,12 @@ export function useRealtimeData() {
 
   const fetchInitialData = useCallback(async () => {
     try {
-      const [readingsRes, alertsRes] = await Promise.all([
+      const [currentRes, readingsRes, alertsRes, commandRes] = await Promise.all([
+        supabase
+          .from('current_sensor_readings')
+          .select('device_id,temperature,humidity,gas_ppm,moisture,fan_on,buzzer_on,mri_score,risk_level,updated_at')
+          .eq('device_id', DEVICE_ID)
+          .maybeSingle(),
         supabase
           .from('sensor_readings')
           .select('id,created_at,device_id,temperature,humidity,gas_ppm,moisture,fan_on,buzzer_on,mri_score,risk_level')
@@ -263,22 +289,35 @@ export function useRealtimeData() {
           .eq('device_id', DEVICE_ID)
           .order('created_at', { ascending: false })
           .limit(10),
+        supabase
+          .from('actuator_commands')
+          .select('device_id,fan_on,buzzer_on,control_mode,updated_at')
+          .eq('device_id', DEVICE_ID)
+          .maybeSingle(),
       ]);
 
+      if (currentRes.error) throw currentRes.error;
       if (readingsRes.error) throw readingsRes.error;
       if (alertsRes.error) throw alertsRes.error;
+      if (commandRes.error) throw commandRes.error;
 
-      const readings = ((readingsRes.data || []) as SensorReading[]).reverse();
+      const historyReadings = ((readingsRes.data || []) as SensorReading[]).reverse();
+      const currentReading = currentRes.data ? currentToReading(currentRes.data as CurrentSensorReading) : null;
+      const readings = currentReading
+        ? [...historyReadings, currentReading].slice(-LIVE_LIMIT)
+        : historyReadings;
+
       setState((prev) => ({
         ...prev,
         readings,
-        latestReading: readings[readings.length - 1] || null,
+        latestReading: currentReading || readings[readings.length - 1] || null,
         alerts: (alertsRes.data || []) as Alert[],
         isLoading: false,
         isConnected: true,
         error: null,
-        lastReceivedAt: readings[readings.length - 1]?.created_at ?? null,
-        totalSamples: readings.length,
+        lastReceivedAt: (currentReading || readings[readings.length - 1])?.created_at ?? null,
+        totalSamples: historyReadings.length,
+        controlMode: (commandRes.data?.control_mode as ControlMode | undefined) || 'auto',
       }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to fetch data';
@@ -306,16 +345,18 @@ export function useRealtimeData() {
         device_id: DEVICE_ID,
         fan_on: actuator === 'fan_on' ? value : latest.fan_on,
         buzzer_on: actuator === 'buzzer_on' ? value : latest.buzzer_on,
+        control_mode: 'manual',
       };
 
       if (!isSupabaseConfigured) {
-        const updated = { ...latest, ...command };
+        const updated: SensorReading = { ...latest, fan_on: command.fan_on, buzzer_on: command.buzzer_on };
         setState((prev) => ({
           ...prev,
           latestReading: updated,
           readings: prev.readings.map((reading) => (reading.id === latest.id ? updated : reading)),
           historyReadings: prev.historyReadings.map((reading) => (reading.id === latest.id ? updated : reading)),
           controlStatus: 'Demo command updated locally',
+          controlMode: 'manual',
         }));
         return;
       }
@@ -330,13 +371,14 @@ export function useRealtimeData() {
 
         if (error) throw error;
 
-        const updated = { ...latest, ...command };
+        const updated: SensorReading = { ...latest, fan_on: command.fan_on, buzzer_on: command.buzzer_on };
         setState((prev) => ({
           ...prev,
           latestReading: updated,
           readings: prev.readings.map((reading) => (reading.id === latest.id ? updated : reading)),
           historyReadings: prev.historyReadings.map((reading) => (reading.id === latest.id ? updated : reading)),
-          controlStatus: 'Command sent to device queue',
+          controlStatus: 'Manual command sent to device',
+          controlMode: 'manual',
         }));
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Actuator command failed';
@@ -345,6 +387,45 @@ export function useRealtimeData() {
     },
     [state.latestReading]
   );
+
+  const setAutoControl = useCallback(async () => {
+    const latest = state.latestReading;
+    const command: ActuatorCommand = {
+      device_id: DEVICE_ID,
+      fan_on: latest?.fan_on ?? false,
+      buzzer_on: latest?.buzzer_on ?? false,
+      control_mode: 'auto',
+    };
+
+    if (!isSupabaseConfigured) {
+      setState((prev) => ({
+        ...prev,
+        controlMode: 'auto',
+        controlStatus: 'Auto mode enabled locally',
+      }));
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('actuator_commands')
+        .upsert(
+          { ...command, updated_at: new Date().toISOString() },
+          { onConflict: 'device_id' }
+        );
+
+      if (error) throw error;
+
+      setState((prev) => ({
+        ...prev,
+        controlMode: 'auto',
+        controlStatus: 'Auto mode sent to device',
+      }));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Auto mode command failed';
+      setState((prev) => ({ ...prev, controlStatus: message }));
+    }
+  }, [state.latestReading]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -365,6 +446,24 @@ export function useRealtimeData() {
       .on(
         'postgres_changes',
         {
+          event: '*',
+          schema: 'public',
+          table: 'current_sensor_readings',
+          filter: `device_id=eq.${DEVICE_ID}`,
+        },
+        (payload) => {
+          const newReading = currentToReading(payload.new as CurrentSensorReading);
+          setState((prev) => ({
+            ...prev,
+            readings: [...prev.readings.slice(-(LIVE_LIMIT - 1)), newReading],
+            latestReading: newReading,
+            lastReceivedAt: newReading.created_at,
+          }));
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
           event: 'INSERT',
           schema: 'public',
           table: 'sensor_readings',
@@ -374,12 +473,9 @@ export function useRealtimeData() {
           const newReading = payload.new as SensorReading;
           setState((prev) => ({
             ...prev,
-            readings: [...prev.readings.slice(-(LIVE_LIMIT - 1)), newReading],
             historyReadings: prev.selectedRange === 'live'
               ? [...prev.historyReadings.slice(-(HISTORY_PAGE_SIZE - 1)), newReading]
               : prev.historyReadings,
-            latestReading: newReading,
-            lastReceivedAt: newReading.created_at,
             totalSamples: prev.totalSamples + 1,
           }));
         }
@@ -400,6 +496,19 @@ export function useRealtimeData() {
           }));
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'actuator_commands',
+          filter: `device_id=eq.${DEVICE_ID}`,
+        },
+        (payload) => {
+          const command = payload.new as ActuatorCommand;
+          setState((prev) => ({ ...prev, controlMode: command.control_mode || 'auto' }));
+        }
+      )
       .subscribe((status) => {
         setState((prev) => ({ ...prev, isConnected: status === 'SUBSCRIBED' }));
       });
@@ -416,5 +525,6 @@ export function useRealtimeData() {
     setSelectedRange,
     loadMoreHistory,
     toggleActuator,
+    setAutoControl,
   };
 }

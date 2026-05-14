@@ -9,19 +9,19 @@ A real-time IoT dashboard for rice storage monitoring built with React, TypeScri
 - Fast live chart with capped in-memory readings so realtime updates do not grow without limit.
 - Historical data filters for Live, 24h, 7d, 30d, and 90d.
 - Hourly and daily Supabase rollups for longer history.
-- Direct ESP32 telemetry inserts into Supabase using the anon key.
+- Direct ESP32 telemetry updates into Supabase using the anon key.
 - Read-only dashboard access through Supabase RLS policies.
-- Actuator command state through the `actuator_commands` table.
+- Manual/auto actuator command state through the `actuator_commands` table.
 - Printable data report for the selected range.
 - Demo mode when Supabase credentials are not configured.
 
 ## Data Flow
 
 1. ESP32 reads sensors and prints each data cycle to Serial Monitor.
-2. ESP32 sends readings directly to Supabase `sensor_readings` with `device_id`, MRI, and risk level.
-3. A Supabase trigger creates alerts with cooldown protection and updates hourly/daily rollups.
-4. The dashboard listens to realtime inserts for live data and fetches historical ranges on demand.
-5. Long-range views use rollup rows instead of loading every raw reading.
+2. ESP32 upserts the latest reading into `current_sensor_readings` every 2 seconds.
+3. ESP32 inserts a historical row into `sensor_readings` every 60 seconds.
+4. A Supabase trigger creates alerts with cooldown protection and updates hourly/daily rollups from history rows.
+5. The dashboard listens to realtime updates for live data and fetches historical ranges on demand.
 
 ## Environment
 
@@ -39,14 +39,15 @@ Use the same `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_DEVICE_ID`
 
 Run `supabase/schema.sql` in the Supabase SQL Editor. It creates:
 
-- `sensor_readings` with `device_id`, MRI, risk level, actuator states, and indexed timestamps.
+- `current_sensor_readings` with one live row per device for fast monitoring.
+- `sensor_readings` with 1-minute history rows, MRI, risk level, actuator states, and indexed timestamps.
 - `alerts` with device-scoped alert history.
 - `sensor_rollups` for hourly and daily history.
-- `actuator_commands` for dashboard-to-device command state.
-- RLS policies that allow public reads and allow anon inserts only into `sensor_readings` for `silo-1`.
+- `actuator_commands` for dashboard-to-device auto/manual command state.
+- RLS policies that allow public reads, anon upserts into `current_sensor_readings`, and anon inserts into `sensor_readings` for `silo-1`.
 - A private trigger that updates rollups and alerts after each sensor reading insert.
 
-Raw readings are designed for 90-day retention. Run `select public.delete_old_sensor_readings();` manually or from a scheduled job if you want automatic cleanup.
+Raw history readings are designed for 90-day retention. Run `select public.delete_old_sensor_readings();` manually or from a scheduled job if you want automatic cleanup.
 
 ## Local Development
 

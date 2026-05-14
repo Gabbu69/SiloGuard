@@ -1,19 +1,24 @@
 import { Fan, Volume2, Power } from 'lucide-react';
+import type { ControlMode } from '../lib/supabase';
 
 interface ActuatorStatusProps {
   fanOn: boolean;
   buzzerOn: boolean;
+  controlMode: ControlMode;
   isLoading: boolean;
   onToggleFan: (value: boolean) => void;
   onToggleBuzzer: (value: boolean) => void;
+  onSetAuto: () => void;
 }
 
 export default function ActuatorStatus({
   fanOn,
   buzzerOn,
+  controlMode,
   isLoading,
   onToggleFan,
   onToggleBuzzer,
+  onSetAuto,
 }: ActuatorStatusProps) {
   if (isLoading) {
     return (
@@ -30,11 +35,32 @@ export default function ActuatorStatus({
   return (
     <div className="glass-card p-6 fade-in-up">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-5">
-        <Power className="w-5 h-5 text-rice-400" />
-        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-          Actuator Control
-        </h3>
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <div className="flex items-center gap-2">
+          <Power className="w-5 h-5 text-rice-400" />
+          <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+            Actuator Control
+          </h3>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full"
+            style={{
+              color: controlMode === 'manual' ? '#f59e0b' : '#22c55e',
+              backgroundColor: controlMode === 'manual' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(34, 197, 94, 0.12)',
+              border: `1px solid ${controlMode === 'manual' ? 'rgba(245, 158, 11, 0.25)' : 'rgba(34, 197, 94, 0.25)'}`,
+            }}
+          >
+            {controlMode}
+          </span>
+          <button
+            onClick={onSetAuto}
+            disabled={controlMode === 'auto'}
+            className="rounded-full border border-dark-600 bg-dark-700/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-200 transition hover:border-rice-500/60 disabled:cursor-default disabled:opacity-40"
+          >
+            Auto
+          </button>
+        </div>
       </div>
 
       <div className="space-y-4">

@@ -1,6 +1,19 @@
 -- SiloGuard: direct ESP32-to-Supabase telemetry schema with historical rollups.
 -- Run in Supabase SQL Editor. The ESP32 inserts readings with the anon key.
 
+create table if not exists public.current_sensor_readings (
+  device_id text primary key default 'silo-1',
+  temperature float8 not null check (temperature between -10 and 70),
+  humidity float8 not null check (humidity between 0 and 100),
+  gas_ppm float8 not null check (gas_ppm between 0 and 1200),
+  moisture float8 not null check (moisture between 0 and 100),
+  fan_on boolean not null default false,
+  buzzer_on boolean not null default false,
+  mri_score int not null default 0 check (mri_score between 0 and 100),
+  risk_level text not null default 'Low' check (risk_level in ('Low', 'Moderate', 'High', 'Critical')),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.sensor_readings (
   id bigserial primary key,
   created_at timestamptz not null default now(),
@@ -63,8 +76,21 @@ create table if not exists public.actuator_commands (
   device_id text primary key,
   fan_on boolean not null default false,
   buzzer_on boolean not null default false,
+  control_mode text not null default 'auto' check (control_mode in ('auto', 'manual')),
   updated_at timestamptz not null default now()
 );
+
+alter table public.actuator_commands
+  add column if not exists control_mode text not null default 'auto';
+
+do $$
+begin
+  alter table public.actuator_commands
+    add constraint actuator_commands_control_mode_check
+    check (control_mode in ('auto', 'manual'));
+exception
+  when duplicate_object then null;
+end $$;
 
 insert into public.actuator_commands (device_id, fan_on, buzzer_on)
 values ('silo-1', false, false)
@@ -147,6 +173,30 @@ $$;
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
 
+create or replace function private.touch_updated_at()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, private
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists current_sensor_readings_touch_updated_at on public.current_sensor_readings;
+create trigger current_sensor_readings_touch_updated_at
+  before insert or update on public.current_sensor_readings
+  for each row
+  execute function private.touch_updated_at();
+
+drop trigger if exists actuator_commands_touch_updated_at on public.actuator_commands;
+create trigger actuator_commands_touch_updated_at
+  before insert or update on public.actuator_commands
+  for each row
+  execute function private.touch_updated_at();
+
 create or replace function private.handle_sensor_reading_insert()
 returns trigger
 language plpgsql
@@ -215,21 +265,45 @@ create trigger sensor_readings_after_insert
   for each row
   execute function private.handle_sensor_reading_insert();
 
+alter table public.current_sensor_readings enable row level security;
 alter table public.sensor_readings enable row level security;
 alter table public.alerts enable row level security;
 alter table public.sensor_rollups enable row level security;
 alter table public.actuator_commands enable row level security;
 
+drop policy if exists "Public read current_sensor_readings" on public.current_sensor_readings;
+drop policy if exists "Allow device insert current_sensor_readings" on public.current_sensor_readings;
+drop policy if exists "Allow device update current_sensor_readings" on public.current_sensor_readings;
 drop policy if exists "Public read sensor_readings" on public.sensor_readings;
 drop policy if exists "Public read alerts" on public.alerts;
 drop policy if exists "Public read sensor_rollups" on public.sensor_rollups;
 drop policy if exists "Public read actuator_commands" on public.actuator_commands;
 drop policy if exists "Allow public insert on sensor_readings" on public.sensor_readings;
+drop policy if exists "Allow ESP32 sensor inserts" on public.sensor_readings;
+drop policy if exists "Allow public read access on sensor_readings" on public.sensor_readings;
+drop policy if exists "Allow web app sensor reads" on public.sensor_readings;
 drop policy if exists "Allow device insert sensor_readings" on public.sensor_readings;
 drop policy if exists "Allow public update on sensor_readings" on public.sensor_readings;
 drop policy if exists "Allow public insert on alerts" on public.alerts;
+drop policy if exists "Allow public read access on alerts" on public.alerts;
 drop policy if exists "Allow dashboard insert actuator_commands" on public.actuator_commands;
 drop policy if exists "Allow dashboard update actuator_commands" on public.actuator_commands;
+
+create policy "Public read current_sensor_readings"
+  on public.current_sensor_readings for select
+  to anon, authenticated
+  using (true);
+
+create policy "Allow device insert current_sensor_readings"
+  on public.current_sensor_readings for insert
+  to anon
+  with check (device_id = 'silo-1');
+
+create policy "Allow device update current_sensor_readings"
+  on public.current_sensor_readings for update
+  to anon
+  using (device_id = 'silo-1')
+  with check (device_id = 'silo-1');
 
 create policy "Public read sensor_readings"
   on public.sensor_readings for select
@@ -269,6 +343,13 @@ create policy "Allow dashboard update actuator_commands"
 
 do $$
 begin
+  alter publication supabase_realtime add table public.current_sensor_readings;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
   alter publication supabase_realtime add table public.sensor_readings;
 exception
   when duplicate_object then null;
@@ -289,10 +370,12 @@ exception
 end $$;
 
 grant usage on schema public to anon, authenticated;
-grant select on public.sensor_readings, public.alerts, public.sensor_rollups, public.actuator_commands to anon, authenticated;
+grant select on public.current_sensor_readings, public.sensor_readings, public.alerts, public.sensor_rollups, public.actuator_commands to anon, authenticated;
+grant insert, update on public.current_sensor_readings to anon;
 grant insert on public.sensor_readings to anon;
 grant insert, update on public.actuator_commands to anon;
 grant usage, select on all sequences in schema public to anon;
 revoke execute on function public.upsert_sensor_rollup(timestamptz, text, jsonb) from public, anon, authenticated;
 revoke execute on function public.delete_old_sensor_readings() from public, anon, authenticated;
+revoke execute on function private.touch_updated_at() from public, anon, authenticated;
 revoke execute on function private.handle_sensor_reading_insert() from public, anon, authenticated;

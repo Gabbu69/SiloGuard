@@ -39,10 +39,12 @@ export default function App() {
     lastReceivedAt,
     totalSamples,
     controlStatus,
+    controlMode,
     deviceId,
     setSelectedRange,
     loadMoreHistory,
     toggleActuator,
+    setAutoControl,
   } = useRealtimeData();
 
   const temp = latestReading?.temperature ?? null;
@@ -120,9 +122,11 @@ export default function App() {
               <ActuatorStatus
                 fanOn={fanOn}
                 buzzerOn={buzzerOn}
+                controlMode={controlMode}
                 isLoading={isLoading}
                 onToggleFan={(value) => toggleActuator('fan_on', value)}
                 onToggleBuzzer={(value) => toggleActuator('buzzer_on', value)}
+                onSetAuto={setAutoControl}
               />
               {controlStatus && (
                 <div className="rounded-xl border border-dark-600/40 bg-dark-800/60 px-4 py-3 text-xs text-slate-400">

@@ -27,6 +27,19 @@ export interface SensorReading {
   sample_count?: number;
 }
 
+export interface CurrentSensorReading {
+  device_id: string;
+  temperature: number;
+  humidity: number;
+  gas_ppm: number;
+  moisture: number;
+  fan_on: boolean;
+  buzzer_on: boolean;
+  mri_score: number;
+  risk_level: RiskLevel;
+  updated_at: string;
+}
+
 export interface Alert {
   id: number;
   created_at: string;
@@ -42,10 +55,12 @@ export interface ActuatorCommand {
   device_id: string;
   fan_on: boolean;
   buzzer_on: boolean;
+  control_mode: ControlMode;
   updated_at?: string;
 }
 
 export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Critical';
+export type ControlMode = 'auto' | 'manual';
 export type HistoryRange = 'live' | '24h' | '7d' | '30d' | '90d';
 
 // Create client only if configured, otherwise use a dummy placeholder
