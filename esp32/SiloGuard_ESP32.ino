@@ -11,6 +11,7 @@
  */
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <DHT.h>
@@ -55,6 +56,7 @@ const bool ACTUATOR_ACTIVE_LOW = false;
 #define HTTP_TIMEOUT 5000
 
 DHT dht(DHTPIN, DHTTYPE);
+WiFiClientSecure secureClient;
 
 float temperature = 0.0;
 float humidity = 0.0;
@@ -120,6 +122,9 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
 
   dht.begin();
+  secureClient.setInsecure();
+  secureClient.setTimeout(HTTP_TIMEOUT / 1000);
+
   connectToWiFi();
 
   Serial.println("[BOOT] Warming sensors for 5 seconds");
@@ -249,8 +254,9 @@ bool postPayload(String tableName, String payload, String label, bool upsert) {
   if (upsert) {
     url += "?on_conflict=device_id";
   }
-  http.begin(url);
+  http.begin(secureClient, url);
   http.setTimeout(HTTP_TIMEOUT);
+  http.setReuse(false);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("apikey", SUPABASE_ANON_KEY);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
@@ -313,8 +319,9 @@ void fetchActuatorCommand() {
 
   HTTPClient http;
   String url = String(SUPABASE_URL) + "/rest/v1/actuator_commands?device_id=eq." + DEVICE_ID + "&select=device_id,fan_on,buzzer_on,control_mode,updated_at";
-  http.begin(url);
+  http.begin(secureClient, url);
   http.setTimeout(HTTP_TIMEOUT);
+  http.setReuse(false);
   http.addHeader("apikey", SUPABASE_ANON_KEY);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
 
