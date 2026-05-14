@@ -6,9 +6,8 @@ A real-time IoT dashboard for rice storage monitoring built with React, TypeScri
 
 - Live sensor cards for temperature, humidity, MQ-135 air quality, and grain moisture.
 - Mold Risk Index (MRI) calculation with Low, Moderate, High, and Critical risk levels.
-- Fast live chart with capped in-memory readings so realtime updates do not grow without limit.
-- Historical data filters for Live, 24h, 7d, 30d, and 90d.
-- Hourly and daily Supabase rollups for longer history.
+- Live sensor cards backed by the single `current_sensor_readings` row.
+- Historical chart and table filters for 6h, 12h, and 24h.
 - Direct ESP32 telemetry updates into Supabase using the anon key.
 - Read-only dashboard access through Supabase RLS policies.
 - Manual/auto actuator command state through the `actuator_commands` table.
@@ -21,7 +20,7 @@ A real-time IoT dashboard for rice storage monitoring built with React, TypeScri
 2. ESP32 upserts the latest reading into `current_sensor_readings` every 2 seconds.
 3. ESP32 inserts a historical row into `sensor_readings` every 60 seconds.
 4. A Supabase trigger creates alerts with cooldown protection and updates hourly/daily rollups from history rows.
-5. The dashboard listens to realtime updates for live data and fetches historical ranges on demand.
+5. The dashboard listens to realtime updates for current sensor cards and fetches 6h/12h/24h historical ranges on demand.
 
 ## Environment
 

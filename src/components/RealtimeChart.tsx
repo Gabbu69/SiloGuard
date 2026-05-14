@@ -10,21 +10,14 @@ import {
   YAxis,
 } from 'recharts';
 import { Activity, Clock } from 'lucide-react';
-import type { ChartRange, SensorReading } from '../lib/supabase';
+import type { HistoryRange, SensorReading } from '../lib/supabase';
 
 interface RealtimeChartProps {
   readings: SensorReading[];
   isLoading: boolean;
   lastReceivedAt: string | null;
-  selectedRange: ChartRange;
-  onRangeChange: (range: ChartRange) => void;
+  selectedRange: HistoryRange;
 }
-
-const RANGE_OPTIONS: Array<{ value: ChartRange; label: string }> = [
-  { value: '6h', label: '6h' },
-  { value: '12h', label: '12h' },
-  { value: '24h', label: '24h' },
-];
 
 const SENSOR_LINES = [
   { key: 'temperature', name: 'Temperature (C)', color: '#f97316' },
@@ -54,7 +47,6 @@ export default function RealtimeChart({
   isLoading,
   lastReceivedAt,
   selectedRange,
-  onRangeChange,
 }: RealtimeChartProps) {
   const chartData = useMemo(
     () =>
@@ -87,25 +79,17 @@ export default function RealtimeChart({
           <Activity className="w-5 h-5 text-rice-400" />
           <div>
             <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-              Live Sensor Stream
+              Sensor Trend
             </h3>
             <p className="text-xs text-slate-500">
-              {`${readings.length} points in the selected window`}
+              {`${readings.length} historical points from the last ${selectedRange}`}
             </p>
           </div>
         </div>
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between lg:w-auto lg:justify-end">
-          <div className="grid grid-cols-5 gap-1.5 rounded-full border border-dark-600/40 bg-dark-900/35 p-1 sm:flex sm:flex-wrap sm:items-center">
-            {RANGE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => onRangeChange(option.value)}
-                className={`range-button ${selectedRange === option.value ? 'range-button-active' : ''}`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <span className="inline-flex w-fit items-center justify-center whitespace-nowrap rounded-full border border-rice-500/30 bg-rice-500/10 px-2.5 py-1 text-[10px] font-semibold text-rice-300 sm:ml-1">
+            {selectedRange}
+          </span>
           <span className="inline-flex w-fit items-center gap-2 whitespace-nowrap rounded-full bg-dark-700/60 px-2.5 py-1 text-[10px] text-slate-400 sm:ml-1">
             <Clock className="w-3 h-3" />
             {formatAge(lastReceivedAt)}
@@ -116,7 +100,7 @@ export default function RealtimeChart({
       <div className="w-full h-[280px]">
         {readings.length === 0 ? (
           <div className="h-full flex items-center justify-center text-slate-500 text-sm">
-            No live sensor data available yet
+            No historical sensor data available yet
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">

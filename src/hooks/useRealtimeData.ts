@@ -4,7 +4,6 @@ import {
   supabase,
   type ActuatorCommand,
   type Alert,
-  type ChartRange,
   type ControlMode,
   type CurrentSensorReading,
   type HistoryRange,
@@ -14,7 +13,6 @@ import { computeMRI, getRiskLevel } from '../lib/thresholds';
 
 const DEVICE_ID = import.meta.env.VITE_DEVICE_ID || 'silo-1';
 const LIVE_LIMIT = 720;
-const HISTORY_PAGE_SIZE = 100;
 
 interface RealtimeState {
   readings: SensorReading[];
@@ -28,40 +26,37 @@ interface RealtimeState {
   hasMoreHistory: boolean;
   error: string | null;
   selectedRange: HistoryRange;
-  selectedChartRange: ChartRange;
   lastReceivedAt: string | null;
   totalSamples: number;
   controlStatus: string | null;
   controlMode: ControlMode;
 }
 
-function rangeStart(range: HistoryRange): string | null {
-  if (range === 'live') return null;
-  const hours: Record<Exclude<HistoryRange, 'live'>, number> = {
+function rangeHours(range: HistoryRange) {
+  const hours: Record<HistoryRange, number> = {
+    '6h': 6,
+    '12h': 12,
     '24h': 24,
-    '7d': 24 * 7,
-    '30d': 24 * 30,
-    '90d': 24 * 90,
   };
-  return new Date(Date.now() - hours[range] * 60 * 60 * 1000).toISOString();
+  return hours[range];
 }
 
-function chartRangeStart(range: ChartRange): string {
-  const minutes: Record<ChartRange, number> = {
-    '6h': 60 * 6,
-    '12h': 60 * 12,
-    '24h': 60 * 24,
-  };
-  return new Date(Date.now() - minutes[range] * 60 * 1000).toISOString();
+function rangeStart(range: HistoryRange): string {
+  return new Date(Date.now() - rangeHours(range) * 60 * 60 * 1000).toISOString();
 }
 
-function chartRangeLimit(range: ChartRange) {
-  const limits: Record<ChartRange, number> = {
+function rangeLimit(range: HistoryRange) {
+  const limits: Record<HistoryRange, number> = {
     '6h': 420,
     '12h': 780,
     '24h': 1500,
   };
   return limits[range];
+}
+
+function isWithinRange(reading: SensorReading, range: HistoryRange) {
+  const cutoff = Date.now() - rangeHours(range) * 60 * 60 * 1000;
+  return new Date(reading.created_at).getTime() >= cutoff;
 }
 
 function makeReading(
@@ -127,37 +122,6 @@ function generateDemoAlert(index: number): Alert {
   };
 }
 
-function toRollupReading(row: {
-  id: number;
-  bucket_start: string;
-  bucket_kind: 'hour' | 'day';
-  device_id: string;
-  sample_count: number;
-  avg_temperature: number;
-  avg_humidity: number;
-  avg_gas_ppm: number;
-  avg_moisture: number;
-  avg_mri_score: number;
-  max_mri_score: number;
-}): SensorReading {
-  const mri = Math.round(row.avg_mri_score || row.max_mri_score || 0);
-  return {
-    id: row.id,
-    created_at: row.bucket_start,
-    device_id: row.device_id,
-    temperature: row.avg_temperature,
-    humidity: row.avg_humidity,
-    gas_ppm: row.avg_gas_ppm,
-    moisture: row.avg_moisture,
-    fan_on: false,
-    buzzer_on: row.max_mri_score >= 75,
-    mri_score: mri,
-    risk_level: getRiskLevel(mri),
-    rollup_kind: row.bucket_kind,
-    sample_count: row.sample_count,
-  };
-}
-
 export function useRealtimeData() {
   const [state, setState] = useState<RealtimeState>({
     readings: [],
@@ -170,8 +134,7 @@ export function useRealtimeData() {
     isLoadingMore: false,
     hasMoreHistory: false,
     error: null,
-    selectedRange: 'live',
-    selectedChartRange: '6h',
+    selectedRange: '6h',
     lastReceivedAt: null,
     totalSamples: 0,
     controlStatus: null,
@@ -185,46 +148,6 @@ export function useRealtimeData() {
     historyLengthRef.current = state.historyReadings.length;
   }, [state.historyReadings.length]);
 
-  const fetchChartData = useCallback(async (range: ChartRange) => {
-    if (!isSupabaseConfigured) return;
-
-    try {
-      const since = chartRangeStart(range);
-      const limit = chartRangeLimit(range);
-
-      const [readingsRes, currentRes] = await Promise.all([
-        supabase
-          .from('sensor_readings')
-          .select('id,created_at,device_id,temperature,humidity,gas_ppm,moisture,fan_on,buzzer_on,mri_score,risk_level')
-          .eq('device_id', DEVICE_ID)
-          .gte('created_at', since)
-          .order('created_at', { ascending: false })
-          .limit(limit),
-        supabase
-          .from('current_sensor_readings')
-          .select('device_id,temperature,humidity,gas_ppm,moisture,fan_on,buzzer_on,mri_score,risk_level,updated_at')
-          .eq('device_id', DEVICE_ID)
-          .maybeSingle(),
-      ]);
-
-      if (readingsRes.error) throw readingsRes.error;
-      if (currentRes.error) throw currentRes.error;
-
-      const historyReadings = ((readingsRes.data || []) as SensorReading[]).reverse();
-      const currentReading = currentRes.data ? currentToReading(currentRes.data as CurrentSensorReading) : null;
-
-      setState((prev) => ({
-        ...prev,
-        readings: currentReading
-          ? [...historyReadings, currentReading].slice(-limit)
-          : historyReadings,
-      }));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch chart data';
-      setState((prev) => ({ ...prev, error: message }));
-    }
-  }, []);
-
   const fetchHistory = useCallback(async (range: HistoryRange, append = false) => {
     if (!isSupabaseConfigured) return;
 
@@ -237,42 +160,15 @@ export function useRealtimeData() {
     try {
       const offset = append ? historyLengthRef.current : 0;
       const since = rangeStart(range);
-      const useRollups = range === '7d' || range === '30d' || range === '90d';
+      const limit = rangeLimit(range);
 
-      if (useRollups) {
-        const bucketKind = range === '90d' ? 'day' : 'hour';
-        let query = supabase
-          .from('sensor_rollups')
-          .select('id,bucket_start,bucket_kind,device_id,sample_count,avg_temperature,avg_humidity,avg_gas_ppm,avg_moisture,avg_mri_score,max_mri_score')
-          .eq('device_id', DEVICE_ID)
-          .eq('bucket_kind', bucketKind)
-          .order('bucket_start', { ascending: false })
-          .range(offset, offset + HISTORY_PAGE_SIZE - 1);
-
-        if (since) query = query.gte('bucket_start', since);
-
-        const { data, error } = await query;
-        if (error) throw error;
-
-        const nextReadings = (data || []).map((row) => toRollupReading(row)).reverse();
-        setState((prev) => ({
-          ...prev,
-          historyReadings: append ? [...prev.historyReadings, ...nextReadings] : nextReadings,
-          isHistoryLoading: false,
-          isLoadingMore: false,
-          hasMoreHistory: nextReadings.length === HISTORY_PAGE_SIZE,
-        }));
-        return;
-      }
-
-      let query = supabase
+      const query = supabase
         .from('sensor_readings')
         .select('id,created_at,device_id,temperature,humidity,gas_ppm,moisture,fan_on,buzzer_on,mri_score,risk_level')
         .eq('device_id', DEVICE_ID)
+        .gte('created_at', since)
         .order('created_at', { ascending: false })
-        .range(offset, offset + HISTORY_PAGE_SIZE - 1);
-
-      if (since) query = query.gte('created_at', since);
+        .range(offset, offset + limit - 1);
 
       const { data, error } = await query;
       if (error) throw error;
@@ -280,10 +176,17 @@ export function useRealtimeData() {
       const nextReadings = ((data || []) as SensorReading[]).reverse();
       setState((prev) => ({
         ...prev,
-        historyReadings: append ? [...prev.historyReadings, ...nextReadings] : nextReadings,
+        ...(() => {
+          const combinedReadings = append ? [...prev.historyReadings, ...nextReadings] : nextReadings;
+          return {
+            readings: combinedReadings,
+            historyReadings: combinedReadings,
+            totalSamples: combinedReadings.length,
+          };
+        })(),
         isHistoryLoading: false,
         isLoadingMore: false,
-        hasMoreHistory: nextReadings.length === HISTORY_PAGE_SIZE,
+        hasMoreHistory: nextReadings.length === limit,
       }));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to fetch history';
@@ -332,18 +235,12 @@ export function useRealtimeData() {
 
   const fetchInitialData = useCallback(async () => {
     try {
-      const [currentRes, readingsRes, alertsRes, commandRes] = await Promise.all([
+      const [currentRes, alertsRes, commandRes] = await Promise.all([
         supabase
           .from('current_sensor_readings')
           .select('device_id,temperature,humidity,gas_ppm,moisture,fan_on,buzzer_on,mri_score,risk_level,updated_at')
           .eq('device_id', DEVICE_ID)
           .maybeSingle(),
-        supabase
-          .from('sensor_readings')
-          .select('id,created_at,device_id,temperature,humidity,gas_ppm,moisture,fan_on,buzzer_on,mri_score,risk_level')
-          .eq('device_id', DEVICE_ID)
-          .order('created_at', { ascending: false })
-          .limit(LIVE_LIMIT),
         supabase
           .from('alerts')
           .select('id,created_at,device_id,type,sensor,value,mri_score,risk_level')
@@ -358,26 +255,20 @@ export function useRealtimeData() {
       ]);
 
       if (currentRes.error) throw currentRes.error;
-      if (readingsRes.error) throw readingsRes.error;
       if (alertsRes.error) throw alertsRes.error;
       if (commandRes.error) throw commandRes.error;
 
-      const historyReadings = ((readingsRes.data || []) as SensorReading[]).reverse();
       const currentReading = currentRes.data ? currentToReading(currentRes.data as CurrentSensorReading) : null;
-      const readings = currentReading
-        ? [...historyReadings, currentReading].slice(-LIVE_LIMIT)
-        : historyReadings;
 
       setState((prev) => ({
         ...prev,
-        readings,
-        latestReading: currentReading || readings[readings.length - 1] || null,
+        readings: currentReading ? [currentReading] : [],
+        latestReading: currentReading,
         alerts: (alertsRes.data || []) as Alert[],
         isLoading: false,
         isConnected: true,
         error: null,
-        lastReceivedAt: (currentReading || readings[readings.length - 1])?.created_at ?? null,
-        totalSamples: historyReadings.length,
+        lastReceivedAt: currentReading?.created_at ?? null,
         controlMode: (commandRes.data?.control_mode as ControlMode | undefined) || 'auto',
       }));
     } catch (err: unknown) {
@@ -392,11 +283,6 @@ export function useRealtimeData() {
     setState((prev) => ({ ...prev, selectedRange: range, historyReadings: [] }));
     void fetchHistory(range);
   }, [fetchHistory]);
-
-  const setSelectedChartRange = useCallback((range: ChartRange) => {
-    setState((prev) => ({ ...prev, selectedChartRange: range, readings: [] }));
-    void fetchChartData(range);
-  }, [fetchChartData]);
 
   const loadMoreHistory = useCallback(() => {
     void fetchHistory(state.selectedRange, true);
@@ -504,8 +390,7 @@ export function useRealtimeData() {
 
     const initialLoadTimer = window.setTimeout(() => {
       void fetchInitialData();
-      void fetchChartData('6h');
-      void fetchHistory('live');
+      void fetchHistory('6h');
     }, 0);
 
     const channel = supabase
@@ -522,7 +407,6 @@ export function useRealtimeData() {
           const newReading = currentToReading(payload.new as CurrentSensorReading);
           setState((prev) => ({
             ...prev,
-            readings: [...prev.readings.slice(-(chartRangeLimit(prev.selectedChartRange) - 1)), newReading],
             latestReading: newReading,
             lastReceivedAt: newReading.created_at,
           }));
@@ -540,10 +424,15 @@ export function useRealtimeData() {
           const newReading = payload.new as SensorReading;
           setState((prev) => ({
             ...prev,
-            historyReadings: prev.selectedRange === 'live'
-              ? [...prev.historyReadings.slice(-(HISTORY_PAGE_SIZE - 1)), newReading]
+            readings: isWithinRange(newReading, prev.selectedRange)
+              ? [...prev.historyReadings, newReading].filter((reading) => isWithinRange(reading, prev.selectedRange)).slice(-rangeLimit(prev.selectedRange))
+              : prev.readings,
+            historyReadings: isWithinRange(newReading, prev.selectedRange)
+              ? [...prev.historyReadings, newReading].filter((reading) => isWithinRange(reading, prev.selectedRange)).slice(-rangeLimit(prev.selectedRange))
               : prev.historyReadings,
-            totalSamples: prev.totalSamples + 1,
+            totalSamples: isWithinRange(newReading, prev.selectedRange)
+              ? Math.min(prev.historyReadings.length + 1, rangeLimit(prev.selectedRange))
+              : prev.totalSamples,
           }));
         }
       )
@@ -584,12 +473,11 @@ export function useRealtimeData() {
       window.clearTimeout(initialLoadTimer);
       void supabase.removeChannel(channel);
     };
-  }, [fetchChartData, fetchHistory, fetchInitialData, startDemoMode]);
+  }, [fetchHistory, fetchInitialData, startDemoMode]);
 
   return {
     ...state,
     deviceId: DEVICE_ID,
-    setSelectedChartRange,
     setSelectedRange,
     loadMoreHistory,
     toggleActuator,

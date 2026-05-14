@@ -25,7 +25,6 @@ function formatLastReceived(iso: string | null) {
 export default function App() {
   const [showReport, setShowReport] = useState(false);
   const {
-    readings,
     historyReadings,
     latestReading,
     alerts,
@@ -35,14 +34,12 @@ export default function App() {
     isLoadingMore,
     hasMoreHistory,
     error,
-    selectedChartRange,
     selectedRange,
     lastReceivedAt,
     totalSamples,
     controlStatus,
     controlMode,
     deviceId,
-    setSelectedChartRange,
     setSelectedRange,
     loadMoreHistory,
     toggleActuator,
@@ -142,11 +139,10 @@ export default function App() {
 
         <section>
           <RealtimeChart
-            readings={readings}
-            isLoading={isLoading}
+            readings={historyReadings}
+            isLoading={isHistoryLoading}
             lastReceivedAt={lastReceivedAt}
-            selectedRange={selectedChartRange}
-            onRangeChange={setSelectedChartRange}
+            selectedRange={selectedRange}
           />
         </section>
 

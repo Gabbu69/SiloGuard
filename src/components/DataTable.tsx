@@ -14,11 +14,9 @@ interface DataTableProps {
 }
 
 const RANGE_OPTIONS: Array<{ value: HistoryRange; label: string }> = [
-  { value: 'live', label: 'Live' },
+  { value: '6h', label: '6h' },
+  { value: '12h', label: '12h' },
   { value: '24h', label: '24h' },
-  { value: '7d', label: '7d' },
-  { value: '30d', label: '30d' },
-  { value: '90d', label: '90d' },
 ];
 
 function getWorstStatus(reading: SensorReading) {
@@ -61,7 +59,7 @@ export default function DataTable({
         </div>
 
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between lg:w-auto lg:justify-end">
-          <div className="grid grid-cols-5 gap-1.5 rounded-full border border-dark-600/40 bg-dark-900/35 p-1 sm:flex sm:flex-wrap sm:items-center">
+          <div className="grid grid-cols-3 gap-1.5 rounded-full border border-dark-600/40 bg-dark-900/35 p-1 sm:flex sm:flex-wrap sm:items-center">
             {RANGE_OPTIONS.map((option) => (
               <button
                 key={option.value}

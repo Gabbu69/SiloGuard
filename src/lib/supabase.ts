@@ -61,8 +61,7 @@ export interface ActuatorCommand {
 
 export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Critical';
 export type ControlMode = 'auto' | 'manual';
-export type ChartRange = '6h' | '12h' | '24h';
-export type HistoryRange = 'live' | '24h' | '7d' | '30d' | '90d';
+export type HistoryRange = '6h' | '12h' | '24h';
 
 // Create client only if configured, otherwise use a dummy placeholder
 // The app will detect isSupabaseConfigured and run in demo mode
