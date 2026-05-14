@@ -1,9 +1,9 @@
 /*
  * SiloGuard - Smart Rice Storage Monitoring System
- * ESP32 Firmware v2.1
+ * ESP32 Firmware v2.2
  *
- * Sends sensor readings to the secure SiloGuard API:
- *   POST /api/ingest with x-device-token
+ * Sends sensor readings directly to Supabase:
+ *   POST /rest/v1/sensor_readings
  *
  * Prints every reading cycle to the Serial Monitor and keeps one compact
  * retry payload so temporary network failures do not lose the latest sample.
@@ -18,13 +18,10 @@
 const char* WIFI_SSID = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// SiloGuard API configuration.
-// Do not put the Supabase service_role key on the ESP32. The API writes to
-// Supabase using the server-side environment variables already configured
-// for the web app.
-const char* API_BASE_URL = "https://your-silogguard-app.vercel.app";
+// Supabase REST configuration. Use the anon key only, never the service_role key.
+const char* SUPABASE_URL = "https://your-project.supabase.co";
+const char* SUPABASE_ANON_KEY = "your-supabase-anon-key";
 const char* DEVICE_ID = "silo-1";
-const char* DEVICE_TOKEN = "change-this-device-token";
 
 // Sensor pins from the current hardware wiring
 #define DHTPIN 4
@@ -107,8 +104,8 @@ void applyActuators() {
 void setup() {
   Serial.begin(115200);
   Serial.println();
-  Serial.println("SiloGuard ESP32 v2.0");
-  Serial.println("Secure telemetry + printable serial data");
+  Serial.println("SiloGuard ESP32 v2.2");
+  Serial.println("Direct Supabase telemetry + printable serial data");
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(FAN_PIN, OUTPUT);
@@ -228,6 +225,9 @@ String buildPayload() {
   doc["moisture"] = round(moisture * 10) / 10.0;
   doc["fan_on"] = fanOn;
   doc["buzzer_on"] = buzzerOn;
+  int mri = round(computeMRI(temperature, humidity, gasPPM, moisture));
+  doc["mri_score"] = mri;
+  doc["risk_level"] = riskLevel(mri);
 
   String payload;
   serializeJson(doc, payload);
@@ -241,11 +241,13 @@ bool postPayload(String payload, String label) {
   }
 
   HTTPClient http;
-  String url = String(API_BASE_URL) + "/api/ingest";
+  String url = String(SUPABASE_URL) + "/rest/v1/sensor_readings";
   http.begin(url);
   http.setTimeout(HTTP_TIMEOUT);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("x-device-token", DEVICE_TOKEN);
+  http.addHeader("apikey", SUPABASE_ANON_KEY);
+  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
+  http.addHeader("Prefer", "return=minimal");
 
   Serial.print("[HTTP] " + label + " upload... ");
   int httpCode = http.POST(payload);
@@ -298,10 +300,11 @@ void fetchActuatorCommand() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   HTTPClient http;
-  String url = String(API_BASE_URL) + "/api/actuators?device_id=" + DEVICE_ID;
+  String url = String(SUPABASE_URL) + "/rest/v1/actuator_commands?device_id=eq." + DEVICE_ID + "&select=device_id,fan_on,buzzer_on,updated_at";
   http.begin(url);
   http.setTimeout(HTTP_TIMEOUT);
-  http.addHeader("x-device-token", DEVICE_TOKEN);
+  http.addHeader("apikey", SUPABASE_ANON_KEY);
+  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
 
   int httpCode = http.GET();
   if (httpCode != 200) {
@@ -310,7 +313,7 @@ void fetchActuatorCommand() {
     return;
   }
 
-  StaticJsonDocument<192> doc;
+  StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, http.getString());
   http.end();
 
@@ -319,8 +322,14 @@ void fetchActuatorCommand() {
     return;
   }
 
-  bool nextFan = doc["fan_on"] | fanOn;
-  bool nextBuzzer = doc["buzzer_on"] | buzzerOn;
+  if (!doc.is<JsonArray>() || doc.size() == 0) {
+    commandOverride = false;
+    return;
+  }
+
+  JsonObject command = doc[0];
+  bool nextFan = command["fan_on"] | fanOn;
+  bool nextBuzzer = command["buzzer_on"] | buzzerOn;
   commandOverride = nextFan || nextBuzzer;
   fanOn = nextFan;
   buzzerOn = nextBuzzer;

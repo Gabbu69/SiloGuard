@@ -9,17 +9,17 @@ A real-time IoT dashboard for rice storage monitoring built with React, TypeScri
 - Fast live chart with capped in-memory readings so realtime updates do not grow without limit.
 - Historical data filters for Live, 24h, 7d, 30d, and 90d.
 - Hourly and daily Supabase rollups for longer history.
-- Secure sensor ingestion through `/api/ingest` using `x-device-token`.
+- Direct ESP32 telemetry inserts into Supabase using the anon key.
 - Read-only dashboard access through Supabase RLS policies.
-- Actuator command queue through `/api/actuators`.
+- Actuator command state through the `actuator_commands` table.
 - Printable data report for the selected range.
 - Demo mode when Supabase credentials are not configured.
 
 ## Data Flow
 
 1. ESP32 reads sensors and prints each data cycle to Serial Monitor.
-2. ESP32 sends readings to `/api/ingest` with `device_id` and `x-device-token`.
-3. The API validates the payload, computes MRI/risk, inserts into Supabase, creates alerts with cooldown protection, and updates rollups.
+2. ESP32 sends readings directly to Supabase `sensor_readings` with `device_id`, MRI, and risk level.
+3. A Supabase trigger creates alerts with cooldown protection and updates hourly/daily rollups.
 4. The dashboard listens to realtime inserts for live data and fetches historical ranges on demand.
 5. Long-range views use rollup rows instead of loading every raw reading.
 
@@ -31,16 +31,9 @@ Copy `.env.example` to `.env` for local development and configure the same value
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 VITE_DEVICE_ID=silo-1
-VITE_DASHBOARD_CONTROL_TOKEN=
-
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-DEVICE_TOKEN=change-this-device-token
-DASHBOARD_CONTROL_TOKEN=
-ALERT_COOLDOWN_MINUTES=10
 ```
 
-Use the same `DEVICE_TOKEN` and `DEVICE_ID` in `esp32/SiloGuard_ESP32.ino`.
+Use the same `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_DEVICE_ID` values in `esp32/SiloGuard_ESP32.ino`.
 
 ## Supabase Setup
 
@@ -50,7 +43,8 @@ Run `supabase/schema.sql` in the Supabase SQL Editor. It creates:
 - `alerts` with device-scoped alert history.
 - `sensor_rollups` for hourly and daily history.
 - `actuator_commands` for dashboard-to-device command state.
-- RLS policies that allow public reads but block public table writes.
+- RLS policies that allow public reads and allow anon inserts only into `sensor_readings` for `silo-1`.
+- A private trigger that updates rollups and alerts after each sensor reading insert.
 
 Raw readings are designed for 90-day retention. Run `select public.delete_old_sensor_readings();` manually or from a scheduled job if you want automatic cleanup.
 
@@ -61,7 +55,7 @@ npm install
 npm run dev
 ```
 
-The Vite dev server serves the dashboard. Vercel Functions are available when running through Vercel or `vercel dev`.
+The Vite dev server serves the dashboard.
 
 ## Build Checks
 
@@ -76,9 +70,9 @@ Edit `esp32/SiloGuard_ESP32.ino`:
 
 - `WIFI_SSID`
 - `WIFI_PASSWORD`
-- `API_BASE_URL`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
 - `DEVICE_ID`
-- `DEVICE_TOKEN`
 
 Serial Monitor output is printed as compact lines like:
 

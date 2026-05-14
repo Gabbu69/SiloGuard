@@ -321,17 +321,14 @@ export function useRealtimeData() {
       }
 
       try {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        const controlToken = import.meta.env.VITE_DASHBOARD_CONTROL_TOKEN;
-        if (controlToken) headers.Authorization = `Bearer ${controlToken}`;
+        const { error } = await supabase
+          .from('actuator_commands')
+          .upsert(
+            { ...command, updated_at: new Date().toISOString() },
+            { onConflict: 'device_id' }
+          );
 
-        const response = await fetch('/api/actuators', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(command),
-        });
-
-        if (!response.ok) throw new Error(`Actuator command failed (${response.status})`);
+        if (error) throw error;
 
         const updated = { ...latest, ...command };
         setState((prev) => ({

@@ -1,5 +1,5 @@
--- SiloGuard: secure telemetry schema with historical rollups.
--- Run in Supabase SQL Editor. Server-side API writes with the service role key.
+-- SiloGuard: direct ESP32-to-Supabase telemetry schema with historical rollups.
+-- Run in Supabase SQL Editor. The ESP32 inserts readings with the anon key.
 
 create table if not exists public.sensor_readings (
   id bigserial primary key,
@@ -144,6 +144,77 @@ begin
 end;
 $$;
 
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+
+create or replace function private.handle_sensor_reading_insert()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, private
+as $$
+declare
+  alert_type text;
+  alert_sensor text;
+  alert_value float8;
+  since timestamptz := now() - interval '10 minutes';
+begin
+  perform public.upsert_sensor_rollup(date_trunc('hour', new.created_at), 'hour', to_jsonb(new));
+  perform public.upsert_sensor_rollup(date_trunc('day', new.created_at), 'day', to_jsonb(new));
+
+  alert_sensor := case
+    when new.temperature > 38 then 'temperature'
+    when new.humidity > 85 then 'humidity'
+    when new.gas_ppm > 400 then 'gas_ppm'
+    when new.moisture > 80 then 'moisture'
+    when new.temperature > 32 then 'temperature'
+    when new.humidity > 70 then 'humidity'
+    when new.gas_ppm > 200 then 'gas_ppm'
+    when new.moisture > 60 then 'moisture'
+    when new.mri_score >= 40 then 'mri_score'
+    else null
+  end;
+
+  if alert_sensor is null then
+    return new;
+  end if;
+
+  alert_type := case
+    when new.risk_level = 'Critical' then 'Critical Mold Risk'
+    when alert_sensor = 'mri_score' then 'Mold Risk Rising'
+    else 'Threshold Exceeded'
+  end;
+
+  alert_value := case alert_sensor
+    when 'temperature' then new.temperature
+    when 'humidity' then new.humidity
+    when 'gas_ppm' then new.gas_ppm
+    when 'moisture' then new.moisture
+    else new.mri_score
+  end;
+
+  if not exists (
+    select 1
+    from public.alerts
+    where device_id = new.device_id
+      and type = alert_type
+      and sensor = alert_sensor
+      and created_at >= since
+  ) then
+    insert into public.alerts (device_id, type, sensor, value, mri_score, risk_level)
+    values (new.device_id, alert_type, alert_sensor, round(alert_value::numeric, 1), new.mri_score, new.risk_level);
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists sensor_readings_after_insert on public.sensor_readings;
+create trigger sensor_readings_after_insert
+  after insert on public.sensor_readings
+  for each row
+  execute function private.handle_sensor_reading_insert();
+
 alter table public.sensor_readings enable row level security;
 alter table public.alerts enable row level security;
 alter table public.sensor_rollups enable row level security;
@@ -154,13 +225,21 @@ drop policy if exists "Public read alerts" on public.alerts;
 drop policy if exists "Public read sensor_rollups" on public.sensor_rollups;
 drop policy if exists "Public read actuator_commands" on public.actuator_commands;
 drop policy if exists "Allow public insert on sensor_readings" on public.sensor_readings;
+drop policy if exists "Allow device insert sensor_readings" on public.sensor_readings;
 drop policy if exists "Allow public update on sensor_readings" on public.sensor_readings;
 drop policy if exists "Allow public insert on alerts" on public.alerts;
+drop policy if exists "Allow dashboard insert actuator_commands" on public.actuator_commands;
+drop policy if exists "Allow dashboard update actuator_commands" on public.actuator_commands;
 
 create policy "Public read sensor_readings"
   on public.sensor_readings for select
   to anon, authenticated
   using (true);
+
+create policy "Allow device insert sensor_readings"
+  on public.sensor_readings for insert
+  to anon
+  with check (device_id = 'silo-1');
 
 create policy "Public read alerts"
   on public.alerts for select
@@ -176,6 +255,17 @@ create policy "Public read actuator_commands"
   on public.actuator_commands for select
   to anon, authenticated
   using (true);
+
+create policy "Allow dashboard insert actuator_commands"
+  on public.actuator_commands for insert
+  to anon
+  with check (device_id = 'silo-1');
+
+create policy "Allow dashboard update actuator_commands"
+  on public.actuator_commands for update
+  to anon
+  using (device_id = 'silo-1')
+  with check (device_id = 'silo-1');
 
 do $$
 begin
@@ -200,5 +290,9 @@ end $$;
 
 grant usage on schema public to anon, authenticated;
 grant select on public.sensor_readings, public.alerts, public.sensor_rollups, public.actuator_commands to anon, authenticated;
+grant insert on public.sensor_readings to anon;
+grant insert, update on public.actuator_commands to anon;
+grant usage, select on all sequences in schema public to anon;
 revoke execute on function public.upsert_sensor_rollup(timestamptz, text, jsonb) from public, anon, authenticated;
 revoke execute on function public.delete_old_sensor_readings() from public, anon, authenticated;
+revoke execute on function private.handle_sensor_reading_insert() from public, anon, authenticated;
