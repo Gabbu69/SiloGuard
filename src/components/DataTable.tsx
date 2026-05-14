@@ -60,17 +60,19 @@ export default function DataTable({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {RANGE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => onRangeChange(option.value)}
-              className={`range-button ${selectedRange === option.value ? 'range-button-active' : ''}`}
-            >
-              {option.label}
-            </button>
-          ))}
-          <span className="text-[10px] text-slate-500 bg-dark-700/60 px-2 py-1 rounded-full">
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between lg:w-auto lg:justify-end">
+          <div className="grid grid-cols-5 gap-1.5 rounded-full border border-dark-600/40 bg-dark-900/35 p-1 sm:flex sm:flex-wrap sm:items-center">
+            {RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => onRangeChange(option.value)}
+                className={`range-button ${selectedRange === option.value ? 'range-button-active' : ''}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <span className="inline-flex w-fit items-center justify-center whitespace-nowrap rounded-full bg-dark-700/60 px-2.5 py-1 text-[10px] text-slate-500 sm:ml-1">
             {readings.length} rows
           </span>
         </div>
