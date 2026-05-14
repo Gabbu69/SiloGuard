@@ -20,8 +20,8 @@ const char* WIFI_SSID = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 // Supabase REST configuration. Use the anon key only, never the service_role key.
-const char* SUPABASE_URL = "https://your-project.supabase.co";
-const char* SUPABASE_ANON_KEY = "your-supabase-anon-key";
+const char* SUPABASE_URL = "https://sakkmmdymuslpuwzzzer.supabase.co";
+const char* SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNha2ttbWR5bXVzbHB1d3p6emVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTc2MzEsImV4cCI6MjA5MjkzMzYzMX0.1S8mQzySRPGtEFA2zbLzr4HHiqBpf7tjX2TblKaqERY";
 const char* DEVICE_ID = "silo-1";
 
 // Sensor pins from the current hardware wiring
@@ -325,16 +325,13 @@ void fetchActuatorCommand() {
     return;
   }
 
+  String response = http.getString();
   StaticJsonDocument<256> doc;
-  DeserializationError error = deserializeJson(doc, http.getString());
+  DeserializationError error = deserializeJson(doc, response);
   http.end();
 
-  if (error) {
-    Serial.println("[CMD] Invalid command JSON");
-    return;
-  }
-
-  if (!doc.is<JsonArray>() || doc.size() == 0) {
+  if (error || !doc.is<JsonArray>() || doc.size() == 0) {
+    Serial.println("[CMD] Invalid or empty command JSON");
     manualControl = false;
     return;
   }
@@ -344,6 +341,7 @@ void fetchActuatorCommand() {
   manualControl = controlMode == "manual";
 
   if (manualControl) {
+    // In manual mode, false is a real OFF command from the web app.
     fanOn = command["fan_on"].as<bool>();
     buzzerOn = command["buzzer_on"].as<bool>();
     applyActuators();
