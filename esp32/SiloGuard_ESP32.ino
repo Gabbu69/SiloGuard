@@ -1,8 +1,8 @@
 /*
  * SiloGuard - Smart Rice Storage Monitoring System
- * ESP32 Firmware v2.0
+ * ESP32 Firmware v2.1
  *
- * Sends sensor readings to the secure Vercel API:
+ * Sends sensor readings to the secure SiloGuard API:
  *   POST /api/ingest with x-device-token
  *
  * Prints every reading cycle to the Serial Monitor and keeps one compact
@@ -18,20 +18,25 @@
 const char* WIFI_SSID = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// SiloGuard API configuration
+// SiloGuard API configuration.
+// Do not put the Supabase service_role key on the ESP32. The API writes to
+// Supabase using the server-side environment variables already configured
+// for the web app.
 const char* API_BASE_URL = "https://your-silogguard-app.vercel.app";
 const char* DEVICE_ID = "silo-1";
 const char* DEVICE_TOKEN = "change-this-device-token";
 
-// Sensor pins
-#define DHT_PIN 4
-#define DHT_TYPE DHT22
-#define MQ135_PIN 34
-#define MOISTURE_PIN 35
+// Sensor pins from the current hardware wiring
+#define DHTPIN 4
+#define DHTTYPE DHT11
+const int FAN_PIN = 23;
+const int BUZZER_PIN = 22;
+const int MQ135_PIN = 33;
+const int SOIL_PIN = 34;
 
-// Actuator pins. Active-low relay modules use LOW = ON.
-#define FAN_RELAY_PIN 26
-#define BUZZER_RELAY_PIN 27
+// Set true for common active-low relay modules, false for direct active-high
+// modules/transistors.
+const bool ACTUATOR_ACTIVE_LOW = false;
 #define LED_PIN 2
 
 // Threshold values. Keep aligned with src/lib/thresholds.ts.
@@ -51,7 +56,7 @@ const char* DEVICE_TOKEN = "change-this-device-token";
 #define WIFI_TIMEOUT 20000
 #define HTTP_TIMEOUT 5000
 
-DHT dht(DHT_PIN, DHT_TYPE);
+DHT dht(DHTPIN, DHTTYPE);
 
 float temperature = 0.0;
 float humidity = 0.0;
@@ -93,8 +98,10 @@ String riskLevel(float mri) {
 }
 
 void applyActuators() {
-  digitalWrite(FAN_RELAY_PIN, fanOn ? LOW : HIGH);
-  digitalWrite(BUZZER_RELAY_PIN, buzzerOn ? LOW : HIGH);
+  const int onLevel = ACTUATOR_ACTIVE_LOW ? LOW : HIGH;
+  const int offLevel = ACTUATOR_ACTIVE_LOW ? HIGH : LOW;
+  digitalWrite(FAN_PIN, fanOn ? onLevel : offLevel);
+  digitalWrite(BUZZER_PIN, buzzerOn ? onLevel : offLevel);
 }
 
 void setup() {
@@ -104,10 +111,10 @@ void setup() {
   Serial.println("Secure telemetry + printable serial data");
 
   pinMode(LED_PIN, OUTPUT);
-  pinMode(FAN_RELAY_PIN, OUTPUT);
-  pinMode(BUZZER_RELAY_PIN, OUTPUT);
+  pinMode(FAN_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
   pinMode(MQ135_PIN, INPUT);
-  pinMode(MOISTURE_PIN, INPUT);
+  pinMode(SOIL_PIN, INPUT);
 
   fanOn = false;
   buzzerOn = false;
@@ -179,7 +186,7 @@ void readSensors() {
   float nextHum = dht.readHumidity();
 
   if (isnan(nextTemp) || isnan(nextHum)) {
-    Serial.println("[SENSOR] DHT22 read failed. Keeping last value.");
+    Serial.println("[SENSOR] DHT11 read failed. Keeping last value.");
   } else {
     temperature = nextTemp;
     humidity = nextHum;
@@ -189,7 +196,7 @@ void readSensors() {
   float voltage = gasRaw * (3.3 / 4095.0);
   gasPPM = constrain(voltage * 200.0, 0, 800);
 
-  int moistRaw = analogRead(MOISTURE_PIN);
+  int moistRaw = analogRead(SOIL_PIN);
   int dryValue = 3500;
   int wetValue = 1000;
   moisture = constrain(map(moistRaw, dryValue, wetValue, 0, 100), 0, 100);
