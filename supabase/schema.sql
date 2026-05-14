@@ -185,6 +185,27 @@ begin
 end;
 $$;
 
+create or replace function private.throttle_sensor_reading_insert()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, private
+as $$
+begin
+  if exists (
+    select 1
+    from public.sensor_readings
+    where device_id = new.device_id
+      and created_at >= new.created_at - interval '55 seconds'
+    limit 1
+  ) then
+    return null;
+  end if;
+
+  return new;
+end;
+$$;
+
 drop trigger if exists current_sensor_readings_touch_updated_at on public.current_sensor_readings;
 create trigger current_sensor_readings_touch_updated_at
   before insert or update on public.current_sensor_readings
@@ -196,6 +217,12 @@ create trigger actuator_commands_touch_updated_at
   before insert or update on public.actuator_commands
   for each row
   execute function private.touch_updated_at();
+
+drop trigger if exists sensor_readings_throttle_insert on public.sensor_readings;
+create trigger sensor_readings_throttle_insert
+  before insert on public.sensor_readings
+  for each row
+  execute function private.throttle_sensor_reading_insert();
 
 create or replace function private.handle_sensor_reading_insert()
 returns trigger
@@ -378,4 +405,5 @@ grant usage, select on all sequences in schema public to anon;
 revoke execute on function public.upsert_sensor_rollup(timestamptz, text, jsonb) from public, anon, authenticated;
 revoke execute on function public.delete_old_sensor_readings() from public, anon, authenticated;
 revoke execute on function private.touch_updated_at() from public, anon, authenticated;
+revoke execute on function private.throttle_sensor_reading_insert() from public, anon, authenticated;
 revoke execute on function private.handle_sensor_reading_insert() from public, anon, authenticated;

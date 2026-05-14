@@ -9,6 +9,7 @@ A real-time IoT dashboard for rice storage monitoring built with React, TypeScri
 - Live sensor cards backed by the single `current_sensor_readings` row.
 - Historical chart and table filters for 6h, 12h, and 24h.
 - Direct ESP32 telemetry updates into Supabase using the anon key.
+- Database-side history throttling blocks duplicate `sensor_readings` inserts inside a 55-second window.
 - Read-only dashboard access through Supabase RLS policies.
 - Manual/auto actuator command state through the `actuator_commands` table.
 - Printable data report for the selected range.
