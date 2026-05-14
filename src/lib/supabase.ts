@@ -61,6 +61,7 @@ export interface ActuatorCommand {
 
 export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Critical';
 export type ControlMode = 'auto' | 'manual';
+export type ChartRange = '15m' | '1h' | '6h' | '24h' | '7d';
 export type HistoryRange = 'live' | '24h' | '7d' | '30d' | '90d';
 
 // Create client only if configured, otherwise use a dummy placeholder

@@ -35,12 +35,14 @@ export default function App() {
     isLoadingMore,
     hasMoreHistory,
     error,
+    selectedChartRange,
     selectedRange,
     lastReceivedAt,
     totalSamples,
     controlStatus,
     controlMode,
     deviceId,
+    setSelectedChartRange,
     setSelectedRange,
     loadMoreHistory,
     toggleActuator,
@@ -139,7 +141,13 @@ export default function App() {
         </section>
 
         <section>
-          <RealtimeChart readings={readings} isLoading={isLoading} lastReceivedAt={lastReceivedAt} />
+          <RealtimeChart
+            readings={readings}
+            isLoading={isLoading}
+            lastReceivedAt={lastReceivedAt}
+            selectedRange={selectedChartRange}
+            onRangeChange={setSelectedChartRange}
+          />
         </section>
 
         <section>
