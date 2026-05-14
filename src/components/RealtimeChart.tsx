@@ -21,11 +21,9 @@ interface RealtimeChartProps {
 }
 
 const RANGE_OPTIONS: Array<{ value: ChartRange; label: string }> = [
-  { value: '15m', label: '15m' },
-  { value: '1h', label: '1h' },
   { value: '6h', label: '6h' },
+  { value: '12h', label: '12h' },
   { value: '24h', label: '24h' },
-  { value: '7d', label: '7d' },
 ];
 
 const SENSOR_LINES = [
@@ -92,7 +90,7 @@ export default function RealtimeChart({
               Live Sensor Stream
             </h3>
             <p className="text-xs text-slate-500">
-              {selectedRange === '7d' ? 'Hourly rollups for the last 7 days' : `${readings.length} points in the selected window`}
+              {`${readings.length} points in the selected window`}
             </p>
           </div>
         </div>

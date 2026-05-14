@@ -48,22 +48,18 @@ function rangeStart(range: HistoryRange): string | null {
 
 function chartRangeStart(range: ChartRange): string {
   const minutes: Record<ChartRange, number> = {
-    '15m': 15,
-    '1h': 60,
     '6h': 60 * 6,
+    '12h': 60 * 12,
     '24h': 60 * 24,
-    '7d': 60 * 24 * 7,
   };
   return new Date(Date.now() - minutes[range] * 60 * 1000).toISOString();
 }
 
 function chartRangeLimit(range: ChartRange) {
   const limits: Record<ChartRange, number> = {
-    '15m': 180,
-    '1h': 360,
     '6h': 420,
+    '12h': 780,
     '24h': 1500,
-    '7d': 180,
   };
   return limits[range];
 }
@@ -175,7 +171,7 @@ export function useRealtimeData() {
     hasMoreHistory: false,
     error: null,
     selectedRange: 'live',
-    selectedChartRange: '1h',
+    selectedChartRange: '6h',
     lastReceivedAt: null,
     totalSamples: 0,
     controlStatus: null,
@@ -195,25 +191,6 @@ export function useRealtimeData() {
     try {
       const since = chartRangeStart(range);
       const limit = chartRangeLimit(range);
-
-      if (range === '7d') {
-        const { data, error } = await supabase
-          .from('sensor_rollups')
-          .select('id,bucket_start,bucket_kind,device_id,sample_count,avg_temperature,avg_humidity,avg_gas_ppm,avg_moisture,avg_mri_score,max_mri_score')
-          .eq('device_id', DEVICE_ID)
-          .eq('bucket_kind', 'hour')
-          .gte('bucket_start', since)
-          .order('bucket_start', { ascending: false })
-          .limit(limit);
-
-        if (error) throw error;
-
-        setState((prev) => ({
-          ...prev,
-          readings: (data || []).map((row) => toRollupReading(row)).reverse(),
-        }));
-        return;
-      }
 
       const [readingsRes, currentRes] = await Promise.all([
         supabase
@@ -527,7 +504,7 @@ export function useRealtimeData() {
 
     const initialLoadTimer = window.setTimeout(() => {
       void fetchInitialData();
-      void fetchChartData('1h');
+      void fetchChartData('6h');
       void fetchHistory('live');
     }, 0);
 
@@ -545,9 +522,7 @@ export function useRealtimeData() {
           const newReading = currentToReading(payload.new as CurrentSensorReading);
           setState((prev) => ({
             ...prev,
-            readings: prev.selectedChartRange === '7d'
-              ? prev.readings
-              : [...prev.readings.slice(-(chartRangeLimit(prev.selectedChartRange) - 1)), newReading],
+            readings: [...prev.readings.slice(-(chartRangeLimit(prev.selectedChartRange) - 1)), newReading],
             latestReading: newReading,
             lastReceivedAt: newReading.created_at,
           }));
