@@ -101,14 +101,14 @@ begin
     avg_mri_score, max_mri_score
   )
   values (
-    bucket_kind, bucket, device, 1,
+    $2, $1, device, 1,
     temp, temp, temp,
     hum, hum, hum,
     gas, gas, gas,
     moist, moist, moist,
     mri, mri
   )
-  on conflict (bucket_kind, bucket_start, device_id)
+  on conflict on constraint sensor_rollups_bucket_kind_bucket_start_device_id_key
   do update set
     sample_count = sensor_rollups.sample_count + 1,
     avg_temperature = ((sensor_rollups.avg_temperature * sensor_rollups.sample_count) + temp) / (sensor_rollups.sample_count + 1),
