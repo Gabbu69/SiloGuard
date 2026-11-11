@@ -2,6 +2,7 @@ import { Fan, RotateCcw, SlidersHorizontal, Volume2, Power } from 'lucide-react'
 import type { ControlMode } from '../lib/supabase';
 
 interface ActuatorStatusProps {
+  canControl: boolean;
   fanOn: boolean;
   buzzerOn: boolean;
   controlMode: ControlMode;
@@ -12,6 +13,7 @@ interface ActuatorStatusProps {
 }
 
 export default function ActuatorStatus({
+  canControl,
   fanOn,
   buzzerOn,
   controlMode,
@@ -39,7 +41,7 @@ export default function ActuatorStatus({
         <div className="flex items-center gap-2">
           <Power className="w-5 h-5 text-rice-400" />
           <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-            Actuator Control
+            Reported outputs / requested mode
           </h3>
         </div>
 
@@ -47,7 +49,7 @@ export default function ActuatorStatus({
           <div className="grid grid-cols-2 gap-1">
             <button
               onClick={onSetAuto}
-              disabled={controlMode === 'auto'}
+              disabled={!canControl || controlMode === 'auto'}
               className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${
                 controlMode === 'auto'
                   ? 'bg-rice-500/15 text-rice-300 ring-1 ring-rice-500/30'
@@ -70,8 +72,8 @@ export default function ActuatorStatus({
           </div>
           <p className="px-2 pt-2 pb-1 text-[11px] leading-relaxed text-slate-500">
             {controlMode === 'auto'
-              ? 'ESP32 follows sensor thresholds.'
-              : 'Dashboard switches override ESP32 auto control.'}
+              ? 'Auto mode requested; reported outputs appear below.'
+              : 'Manual mode requested; wait for device acknowledgment.'}
           </p>
         </div>
       </div>
@@ -120,6 +122,7 @@ export default function ActuatorStatus({
               {fanOn ? 'ON' : 'OFF'}
             </span>
             <button
+              disabled={!canControl}
               onClick={() => onToggleFan(!fanOn)}
               className={`toggle-switch ${fanOn ? 'active' : ''}`}
               aria-label="Toggle exhaust fan"
@@ -167,6 +170,7 @@ export default function ActuatorStatus({
               {buzzerOn ? 'ON' : 'OFF'}
             </span>
             <button
+              disabled={!canControl}
               onClick={() => onToggleBuzzer(!buzzerOn)}
               className={`toggle-switch ${buzzerOn ? 'active' : ''}`}
               aria-label="Toggle alert buzzer"

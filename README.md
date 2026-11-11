@@ -1,99 +1,68 @@
-# SiloGuard - Smart Rice Storage Monitoring System
+# SiloGuard — rice-storage monitoring prototype
 
-A real-time IoT dashboard for rice storage monitoring built with React, TypeScript, Tailwind CSS v4, Vercel Functions, and Supabase.
+## Access model
 
-## Features
+The public viewer key can only read the dashboard. Devices POST telemetry to
+`/api/ingest` with `x-device-token`; operators POST commands to `/api/actuators`
+with a separate Bearer token. Both secrets must have at least 32 characters;
+missing/short secrets deny access. A token is scoped to the server's configured
+`DEVICE_ID`. Devices cannot use their token to submit operator commands.
 
-- Live sensor cards for temperature, humidity, MQ-135 air quality, and grain moisture.
-- Mold Risk Index (MRI) calculation with Low, Moderate, High, and Critical risk levels.
-- Live sensor cards backed by the single `current_sensor_readings` row.
-- Historical chart and table filters for 6h, 12h, and 24h.
-- Direct ESP32 telemetry updates into Supabase using the anon key.
-- Database-side history throttling blocks duplicate `sensor_readings` inserts inside a 55-second window.
-- Read-only dashboard access through Supabase RLS policies.
-- Manual/auto actuator command state through the `actuator_commands` table.
-- Printable data report for the selected range.
-- Demo mode when Supabase credentials are not configured.
+Apply `supabase/schema.sql` to both new and existing databases. It preserves
+records, removes legacy anonymous write policies, and revokes browser-role writes.
+This is a source change: applying it to a hosted database is a separate operation.
 
-## Data Flow
+## Configure and run
 
-1. ESP32 reads sensors and prints each data cycle to Serial Monitor.
-2. ESP32 upserts the latest reading into `current_sensor_readings` every 2 seconds.
-3. ESP32 inserts a historical row into `sensor_readings` every 60 seconds.
-4. A Supabase trigger creates alerts with cooldown protection and updates hourly/daily rollups from history rows.
-5. The dashboard listens to realtime updates for current sensor cards and fetches 6h/12h/24h historical ranges on demand.
+Copy `.env.example` into an ignored environment file. Public `VITE_` values are
+viewer configuration only. Keep the service key, device token, and operator token
+in server configuration. The operator enters the separate control token into a
+password field; the browser retains it only in component memory for that session.
+For a single-device controlled prototype, distribute that token only to authorized
+operators. It is a shared operator credential, not a per-user account/audit system.
 
-## Environment
-
-Copy `.env.example` to `.env` for local development and configure the same values in Vercel for deployment.
-
-```bash
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_DEVICE_ID=silo-1
-```
-
-Use the same `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_DEVICE_ID` values in `esp32/SiloGuard_ESP32.ino`.
-
-## Supabase Setup
-
-Run `supabase/schema.sql` in the Supabase SQL Editor. It creates:
-
-- `current_sensor_readings` with one live row per device for fast monitoring.
-- `sensor_readings` with 1-minute history rows, MRI, risk level, actuator states, and indexed timestamps.
-- `alerts` with device-scoped alert history.
-- `sensor_rollups` for hourly and daily history.
-- `actuator_commands` for dashboard-to-device auto/manual command state.
-- RLS policies that allow public reads, anon upserts into `current_sensor_readings`, and anon inserts into `sensor_readings` for `silo-1`.
-- A private trigger that updates rollups and alerts after each sensor reading insert.
-
-Raw history readings are designed for 90-day retention. Run `select public.delete_old_sensor_readings();` manually or from a scheduled job if you want automatic cleanup.
-
-## Local Development
-
-```bash
-npm install
+```powershell
+npm ci
+npm test
+npm run lint
+npm run build
 npm run dev
 ```
 
-The Vite dev server serves the dashboard.
+Use a Vercel development/deployment runtime for `/api` handlers. Vite by itself
+only serves the frontend. With no public database configuration, the dashboard
+is an explicitly labeled synthetic demo. Configured connection failures remain
+errors; they never silently replace live readings with simulated data.
 
-## Build Checks
+## Device and command contract
 
-```bash
-npm run lint
-npm run build
-```
+Configure `API_ORIGIN`, `DEVICE_TOKEN`, `DEVICE_ID`, and the PEM `API_ROOT_CA` in
+`esp32/SiloGuard_ESP32.ino`. The firmware never embeds a database service key or
+viewer key. HTTPS certificate validation is required; an empty CA blocks requests.
 
-## ESP32
+Send numeric `temperature`, `humidity`, `gas_ppm`, and `moisture`, boolean `fan_on`
+and `buzzer_on`, a `device_id`, and `kind` (`live` or `history`). Live requests
+update current telemetry. History requests insert bounded history; existing
+triggers compute alerts and rollups once.
 
-Edit `esp32/SiloGuard_ESP32.ino`:
+Commands contain boolean output states and `control_mode` (`auto` or `manual`).
+The server records requested intent. The firmware applies it, then echoes its
+exact `updated_at` as `acknowledged_command_at` in live telemetry. The API checks
+that it matches the current command. Pin-state acknowledgment is not proof of
+fan rotation, buzzer sound, wiring correctness, or calibration.
 
-- `WIFI_SSID`
-- `WIFI_PASSWORD`
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `DEVICE_ID`
+The viewer labels fresh readings, stale readings after 15 seconds, and offline
+readings after 120 seconds. It keeps old values visible with their timestamp.
+Reported outputs change only on telemetry; saving a command does not change them.
+Controls require fresh data and wait for acknowledgment of the previous request.
 
-Serial Monitor output is printed as compact lines like:
+## Verification boundaries
 
-```text
-DATA,READ,device=silo-1,temp_c=28.4,humidity_pct=65.1,gas_ppm=180,moisture_pct=47.0,mri=26,risk=Moderate,fan=OFF,buzzer=OFF,retry=NONE
-```
+The automated access tests cover fail-closed configuration, role-token separation,
+device scope, strict boolean/numeric input, request-only command writes, freshness,
+and acknowledgment matching. Database permission tests, hosted endpoint behavior,
+firmware compilation, sensor calibration, TLS chain configuration, and physical
+command acceptance require their own results before operational use.
 
-## Thresholds
-
-| Sensor | Warning | Danger |
-| --- | ---: | ---: |
-| Temperature | > 32 C | > 38 C |
-| Humidity | > 70% | > 85% |
-| Gas PPM | > 200 | > 400 |
-| Moisture | > 60% | > 80% |
-
-MRI formula:
-
-```text
-MRI = humidity_score * 0.4 + temp_score * 0.3 + gas_score * 0.2 + moisture_score * 0.1
-```
-
-## University of Southern Mindanao - IoT Research Project
+The mold-risk index remains an experimental weighted threshold calculation. It
+is not independently validated mold detection.

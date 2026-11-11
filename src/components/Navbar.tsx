@@ -1,11 +1,12 @@
 import { Printer } from 'lucide-react';
 
 interface NavbarProps {
+  isDemo: boolean;
   isConnected: boolean;
   onPrint: () => void;
 }
 
-export default function Navbar({ isConnected, onPrint }: NavbarProps) {
+export default function Navbar({ isConnected, isDemo, onPrint }: NavbarProps) {
   return (
     <nav className="sticky top-0 z-50 glass-card-static px-4 sm:px-6 py-3 flex items-center justify-between border-b border-rice-500/10">
       {/* Brand */}
@@ -44,7 +45,7 @@ export default function Navbar({ isConnected, onPrint }: NavbarProps) {
 
         {/* Connection Status */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-dark-800/80 border border-dark-600/50">
-          {isConnected ? (
+          {isDemo ? <span className="text-xs text-amber-300">Demo</span> : isConnected ? (
             <>
               <span className="text-xs font-medium text-rice-400">Live</span>
               <span className="w-2 h-2 rounded-full bg-rice-500 status-dot" />

@@ -2,9 +2,9 @@
  * SiloGuard - Smart Rice Storage Monitoring System
  * ESP32 Firmware v2.3
  *
- * Sends sensor readings directly to Supabase:
- *   UPSERT /rest/v1/current_sensor_readings every 2 seconds
- *   INSERT /rest/v1/sensor_readings every 60 seconds
+ * Sends authenticated telemetry through the server API:
+ *   POST /api/ingest kind=live every 2 seconds
+ *   POST /api/ingest kind=history every 60 seconds
  *
  * Prints every reading cycle to the Serial Monitor and keeps one compact
  * retry payload so temporary network failures do not lose the latest sample.
@@ -20,10 +20,14 @@
 const char* WIFI_SSID = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// Supabase REST configuration. Use the anon key only, never the service_role key.
-const char* SUPABASE_URL = "https://sakkmmdymuslpuwzzzer.supabase.co";
-const char* SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNha2ttbWR5bXVzbHB1d3p6emVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNTc2MzEsImV4cCI6MjA5MjkzMzYzMX0.1S8mQzySRPGtEFA2zbLzr4HHiqBpf7tjX2TblKaqERY";
+// Server/device credentials are independent of the public viewer key.
+// Configure the HTTPS origin and a >=32-character token matching server DEVICE_TOKEN.
+const char* API_ORIGIN = "https://your-siloguard-deployment.example";
+const char* DEVICE_TOKEN = "CONFIGURE_A_PRIVATE_DEVICE_TOKEN";
 const char* DEVICE_ID = "silo-1";
+// Paste the PEM root CA for the configured HTTPS origin. Empty is fail-closed.
+const char* API_ROOT_CA = "";
+String acknowledgedCommandAt = "";
 
 // Sensor pins from the current hardware wiring
 #define DHTPIN 4
@@ -108,7 +112,7 @@ void setup() {
   Serial.begin(115200);
   Serial.println();
   Serial.println("SiloGuard ESP32 v2.3");
-  Serial.println("Live Supabase upsert + 1-minute history telemetry");
+  Serial.println("Authenticated telemetry + 1-minute history");
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(FAN_PIN, OUTPUT);
@@ -122,7 +126,7 @@ void setup() {
   digitalWrite(LED_PIN, LOW);
 
   dht.begin();
-  secureClient.setInsecure();
+  secureClient.setCACert(API_ROOT_CA);
   secureClient.setTimeout(HTTP_TIMEOUT / 1000);
 
   connectToWiFi();
@@ -228,6 +232,7 @@ void autoControlActuators() {
 String buildPayload() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
+  if (acknowledgedCommandAt.length()) doc["acknowledged_command_at"] = acknowledgedCommandAt;
   doc["temperature"] = round(temperature * 10) / 10.0;
   doc["humidity"] = round(humidity * 10) / 10.0;
   doc["gas_ppm"] = round(gasPPM * 10) / 10.0;
@@ -250,17 +255,21 @@ bool postPayload(String tableName, String payload, String label, bool upsert) {
   }
 
   HTTPClient http;
-  String url = String(SUPABASE_URL) + "/rest/v1/" + tableName;
-  if (upsert) {
-    url += "?on_conflict=device_id";
+  if (strlen(API_ROOT_CA) == 0) {
+    Serial.println("[HTTP] Configure API_ROOT_CA before sending telemetry.");
+    return false;
   }
+  String url = String(API_ORIGIN) + "/api/ingest";
+  StaticJsonDocument<768> body;
+  if (deserializeJson(body, payload)) return false;
+  body["kind"] = upsert ? "live" : "history";
+  payload = "";
+  serializeJson(body, payload);
   http.begin(secureClient, url);
   http.setTimeout(HTTP_TIMEOUT);
   http.setReuse(false);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("apikey", SUPABASE_ANON_KEY);
-  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
-  http.addHeader("Prefer", upsert ? "resolution=merge-duplicates,return=minimal" : "return=minimal");
+  http.addHeader("x-device-token", DEVICE_TOKEN);
 
   Serial.print("[HTTP] " + label + " upload... ");
   int httpCode = http.POST(payload);
@@ -318,12 +327,12 @@ void fetchActuatorCommand() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   HTTPClient http;
-  String url = String(SUPABASE_URL) + "/rest/v1/actuator_commands?device_id=eq." + DEVICE_ID + "&select=device_id,fan_on,buzzer_on,control_mode,updated_at";
+  if (strlen(API_ROOT_CA) == 0) return;
+  String url = String(API_ORIGIN) + "/api/actuators?device_id=" + DEVICE_ID;
   http.begin(secureClient, url);
   http.setTimeout(HTTP_TIMEOUT);
   http.setReuse(false);
-  http.addHeader("apikey", SUPABASE_ANON_KEY);
-  http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON_KEY);
+  http.addHeader("x-device-token", DEVICE_TOKEN);
 
   int httpCode = http.GET();
   if (httpCode != 200) {
@@ -337,13 +346,13 @@ void fetchActuatorCommand() {
   DeserializationError error = deserializeJson(doc, response);
   http.end();
 
-  if (error || !doc.is<JsonArray>() || doc.size() == 0) {
+  if (error || !doc.is<JsonObject>()) {
     Serial.println("[CMD] Invalid or empty command JSON");
     manualControl = false;
     return;
   }
 
-  JsonObject command = doc[0];
+  JsonObject command = doc.as<JsonObject>();
   String controlMode = command["control_mode"] | "auto";
   manualControl = controlMode == "manual";
 
@@ -353,6 +362,10 @@ void fetchActuatorCommand() {
     buzzerOn = command["buzzer_on"].as<bool>();
     applyActuators();
   }
+
+  // Echo the command only after applying it, including auto outputs.
+  if (!manualControl) autoControlActuators();
+  acknowledgedCommandAt = command["updated_at"] | "";
 
   Serial.printf("[CMD] mode=%s fan=%s buzzer=%s\n",
                 manualControl ? "manual" : "auto",
