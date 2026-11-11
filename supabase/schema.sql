@@ -1,5 +1,5 @@
 -- SiloGuard: direct ESP32-to-Supabase telemetry schema with historical rollups.
--- Run in Supabase SQL Editor. The ESP32 inserts readings with the anon key.
+-- Devices send telemetry through the authenticated server API, never with the viewer key.
 
 create table if not exists public.current_sensor_readings (
   device_id text primary key default 'silo-1',
@@ -321,26 +321,13 @@ create policy "Public read current_sensor_readings"
   to anon, authenticated
   using (true);
 
-create policy "Allow device insert current_sensor_readings"
-  on public.current_sensor_readings for insert
-  to anon
-  with check (device_id = 'silo-1');
 
-create policy "Allow device update current_sensor_readings"
-  on public.current_sensor_readings for update
-  to anon
-  using (device_id = 'silo-1')
-  with check (device_id = 'silo-1');
 
 create policy "Public read sensor_readings"
   on public.sensor_readings for select
   to anon, authenticated
   using (true);
 
-create policy "Allow device insert sensor_readings"
-  on public.sensor_readings for insert
-  to anon
-  with check (device_id = 'silo-1');
 
 create policy "Public read alerts"
   on public.alerts for select
@@ -357,16 +344,7 @@ create policy "Public read actuator_commands"
   to anon, authenticated
   using (true);
 
-create policy "Allow dashboard insert actuator_commands"
-  on public.actuator_commands for insert
-  to anon
-  with check (device_id = 'silo-1');
 
-create policy "Allow dashboard update actuator_commands"
-  on public.actuator_commands for update
-  to anon
-  using (device_id = 'silo-1')
-  with check (device_id = 'silo-1');
 
 do $$
 begin
@@ -398,12 +376,17 @@ end $$;
 
 grant usage on schema public to anon, authenticated;
 grant select on public.current_sensor_readings, public.sensor_readings, public.alerts, public.sensor_rollups, public.actuator_commands to anon, authenticated;
-grant insert, update on public.current_sensor_readings to anon;
-grant insert on public.sensor_readings to anon;
-grant insert, update on public.actuator_commands to anon;
-grant usage, select on all sequences in schema public to anon;
+
+
+
+revoke insert, update, delete on public.current_sensor_readings, public.sensor_readings, public.actuator_commands from anon, authenticated;
 revoke execute on function public.upsert_sensor_rollup(timestamptz, text, jsonb) from public, anon, authenticated;
 revoke execute on function public.delete_old_sensor_readings() from public, anon, authenticated;
 revoke execute on function private.touch_updated_at() from public, anon, authenticated;
 revoke execute on function private.throttle_sensor_reading_insert() from public, anon, authenticated;
 revoke execute on function private.handle_sensor_reading_insert() from public, anon, authenticated;
+
+-- Additional upgrade columns retain all existing readings and commands.
+alter table public.current_sensor_readings add column if not exists acknowledged_command_at timestamptz;
+grant all on public.current_sensor_readings, public.sensor_readings, public.actuator_commands, public.alerts, public.sensor_rollups to service_role;
+grant usage, select on all sequences in schema public to service_role;

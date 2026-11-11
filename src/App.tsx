@@ -25,6 +25,7 @@ function formatLastReceived(iso: string | null) {
 export default function App() {
   const [showReport, setShowReport] = useState(false);
   const {
+    isDemo, freshness, canControl, operatorToken, setOperatorToken,
     historyReadings,
     latestReading,
     alerts,
@@ -61,17 +62,23 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col overflow-x-hidden">
-      <Navbar isConnected={isConnected} onPrint={() => setShowReport(true)} />
+      <Navbar isConnected={isConnected && freshness === 'fresh'} isDemo={isDemo} onPrint={() => setShowReport(true)} />
 
       {error && (
         <div className="mx-4 sm:mx-6 mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-red-500" />
           {error}
-          <span className="text-[10px] text-red-400/60 ml-auto">Demo fallback may be active</span>
+          <span className="text-[10px] text-red-400/60 ml-auto">Telemetry unavailable; no synthetic fallback</span>
         </div>
       )}
 
       <main className="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1440px] mx-auto w-full">
+        <p role="status" className="text-sm text-slate-300">{isDemo ? 'Demonstration · simulated readings and controls' : `Telemetry: ${freshness}. Last values remain visible when stale; they are not current conditions.`}</p>
+        {!isDemo && <label className="block text-sm text-slate-300">
+          Operator control token (kept in memory for this session)
+          <input type="password" autoComplete="off" value={operatorToken} onChange={(event) => setOperatorToken(event.target.value)} className="block min-h-11 w-full max-w-md rounded border border-slate-600 bg-dark-800 p-3" />
+          <span className="text-xs">Viewers can read telemetry. Commands require an authorized operator and fresh readings.</span>
+        </label>}
         <section className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="metric-strip">
             <Activity className="w-4 h-4 text-rice-400" />
@@ -99,7 +106,7 @@ export default function App() {
             <div>
               <p className="metric-strip-label">Current MRI</p>
               <p className="metric-strip-value" style={{ color: summary.color }}>
-                {summary.mri} / {summary.risk}
+                {latestReading ? `${summary.mri} / ${summary.risk}` : 'No reading'}
               </p>
             </div>
           </div>
@@ -119,6 +126,7 @@ export default function App() {
             <MoldRiskGauge temperature={temp} humidity={hum} gas_ppm={gas} moisture={moist} />
             <div className="space-y-3">
               <ActuatorStatus
+                canControl={canControl}
                 fanOn={fanOn}
                 buzzerOn={buzzerOn}
                 controlMode={controlMode}

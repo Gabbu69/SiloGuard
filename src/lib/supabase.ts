@@ -28,6 +28,7 @@ export interface SensorReading {
 }
 
 export interface CurrentSensorReading {
+  acknowledged_command_at?: string | null;
   device_id: string;
   temperature: number;
   humidity: number;
